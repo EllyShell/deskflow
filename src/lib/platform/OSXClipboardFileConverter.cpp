@@ -8,6 +8,7 @@
 
 #include "base/Log.h"
 #include "common/ClipboardFile.h"
+#include "platform/OSXClipboardFileUrl.h"
 
 #include <QDir>
 #include <QFile>
@@ -28,13 +29,9 @@ CFStringRef OSXClipboardFileConverter::getOSXFormat() const
 
 std::string OSXClipboardFileConverter::toIClipboard(const std::string &urlData) const
 {
-  // the pasteboard stores the url as a utf-8 string
-  const QUrl url = QUrl::fromEncoded(QByteArray(urlData.data(), static_cast<int>(urlData.size())));
-  if (!url.isLocalFile()) {
-    return std::string();
-  }
-
-  const QString path = url.toLocalFile();
+  // the pasteboard stores the url as a utf-8 string, finder may hand out a
+  // file reference url which has to be resolved before it can be opened
+  const QString path = deskflow::osx::localPathFromFileUrl(urlData);
   if (path.isEmpty()) {
     return std::string();
   }

@@ -12,6 +12,7 @@
 #include "common/ClipboardFile.h"
 #include "platform/OSXClipboardBMPConverter.h"
 #include "platform/OSXClipboardFileConverter.h"
+#include "platform/OSXClipboardFileUrl.h"
 #include "platform/OSXClipboardFileImageConverter.h"
 #include "platform/OSXClipboardHTMLConverter.h"
 #include "platform/OSXClipboardImageConverter.h"
@@ -19,7 +20,6 @@
 #include "platform/OSXClipboardUTF16Converter.h"
 #include "platform/OSXClipboardUTF8Converter.h"
 
-#include <QUrl>
 
 //
 // OSXClipboard
@@ -170,11 +170,11 @@ bool OSXClipboard::hasNonImageFileUrl() const
   );
   CFRelease(data);
 
-  const QUrl fileUrl = QUrl::fromEncoded(QByteArray(url.data(), static_cast<int>(url.size())));
-  if (!fileUrl.isLocalFile()) {
+  const QString path = deskflow::osx::localPathFromFileUrl(url);
+  if (path.isEmpty()) {
     return false;
   }
-  return !deskflow::files::isImageFile(fileUrl.toLocalFile());
+  return !deskflow::files::isImageFile(path);
 }
 
 bool OSXClipboard::has(Format format) const
