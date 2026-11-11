@@ -39,6 +39,15 @@ public:
 private:
   void clearConverters();
 
+  //! True when the pasteboard carries a file url to a non image file
+  /*!
+  Copying a file in finder also publishes image flavours (the file preview), so
+  the bitmap converters used to win and the other computer received a picture
+  instead of the file. When the url points at a non image file the bitmap
+  formats are suppressed so the file format is used.
+  */
+  bool hasNonImageFileUrl() const;
+
 private:
   using ConverterList = std::vector<IOSXClipboardConverter *>;
 

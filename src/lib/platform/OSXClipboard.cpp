@@ -9,14 +9,17 @@
 
 #include "arch/ArchException.h"
 #include "base/Log.h"
+#include "common/ClipboardFile.h"
 #include "platform/OSXClipboardBMPConverter.h"
-#include "platform/OSXClipboardFileImageConverter.h"
 #include "platform/OSXClipboardFileConverter.h"
+#include "platform/OSXClipboardFileImageConverter.h"
 #include "platform/OSXClipboardHTMLConverter.h"
 #include "platform/OSXClipboardImageConverter.h"
 #include "platform/OSXClipboardTextConverter.h"
 #include "platform/OSXClipboardUTF16Converter.h"
 #include "platform/OSXClipboardUTF8Converter.h"
+
+#include <QUrl>
 
 //
 // OSXClipboard
@@ -141,8 +144,45 @@ IClipboard::Time OSXClipboard::getTime() const
   return m_time;
 }
 
+bool OSXClipboard::hasNonImageFileUrl() const
+{
+  if (m_pboard == nullptr) {
+    return false;
+  }
+
+  PasteboardItemID item;
+  if (PasteboardGetItemIdentifier(m_pboard, (CFIndex)1, &item) != noErr) {
+    return false;
+  }
+
+  PasteboardFlavorFlags flags;
+  if (PasteboardGetItemFlavorFlags(m_pboard, item, CFSTR("public.file-url"), &flags) != noErr) {
+    return false;
+  }
+
+  CFDataRef data = nullptr;
+  if (PasteboardCopyItemFlavorData(m_pboard, item, CFSTR("public.file-url"), &data) != noErr || data == nullptr) {
+    return false;
+  }
+
+  std::string url(
+      reinterpret_cast<const char *>(CFDataGetBytePtr(data)), static_cast<size_t>(CFDataGetLength(data))
+  );
+  CFRelease(data);
+
+  const QUrl fileUrl = QUrl::fromEncoded(QByteArray(url.data(), static_cast<int>(url.size())));
+  if (!fileUrl.isLocalFile()) {
+    return false;
+  }
+  return !deskflow::files::isImageFile(fileUrl.toLocalFile());
+}
+
 bool OSXClipboard::has(Format format) const
 {
+  if (format == Format::Bitmap && hasNonImageFileUrl()) {
+    return false;
+  }
+
   if (m_pboard == nullptr)
     return false;
 
@@ -168,6 +208,10 @@ bool OSXClipboard::has(Format format) const
 
 std::string OSXClipboard::get(Format format) const
 {
+  if (format == Format::Bitmap && hasNonImageFileUrl()) {
+    return std::string();
+  }
+
   CFStringRef type;
   PasteboardItemID item;
   std::string result;
