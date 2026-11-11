@@ -67,6 +67,7 @@ void IClipboard::unmarshall(IClipboard *clipboard, const std::string_view &data,
     }
 
     // done
+    LOG_DEBUG("clipboard: unmarshalled formats=%u bytes=%zu", numFormats, data.size());
     clipboard->close();
   }
 }
@@ -96,6 +97,7 @@ std::string IClipboard::marshall(const IClipboard *clipboard)
       if (clipboard->has(static_cast<IClipboard::Format>(format))) {
         ++numFormats;
         formatData[format] = clipboard->get(static_cast<IClipboard::Format>(format));
+        LOG_VERBOSE("clipboard: format=%u bytes=%zu", format, formatData[format].size());
         size += 4 + 4 + (uint32_t)formatData[format].size();
       }
     }
@@ -113,6 +115,8 @@ std::string IClipboard::marshall(const IClipboard *clipboard)
       }
     }
     clipboard->close();
+
+    LOG_DEBUG("clipboard: marshalled formats=%u bytes=%u", numFormats, size);
   }
 
   return data;

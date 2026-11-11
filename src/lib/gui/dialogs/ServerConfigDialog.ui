@@ -433,7 +433,7 @@
                <number>10000</number>
               </property>
               <property name="value">
-               <number>3</number>
+               <number>32</number>
               </property>
              </widget>
             </item>
@@ -454,6 +454,16 @@
              </spacer>
             </item>
            </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="labelClipboardHint">
+            <property name="text">
+             <string>Images are shared uncompressed (about width × height × 4 bytes), so a 1080p screenshot is roughly 8 MB and a 4K one about 32 MB. Increase the limit if large screenshots do not arrive.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
           </item>
          </layout>
         </widget>

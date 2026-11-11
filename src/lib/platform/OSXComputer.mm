@@ -29,6 +29,8 @@
 #include "platform/OSXClipboard.h"
 #include "platform/OSXEventQueueBuffer.h"
 #include "platform/OSXKeyState.h"
+
+#import <AppKit/AppKit.h>
 #include "platform/OSXMediaKeySupport.h"
 #include "platform/OSXPasteboardPeeker.h"
 #include "platform/OSXScreenSaver.h"
@@ -40,6 +42,8 @@
 #include <libproc.h>
 #include <mach-o/dyld.h>
 #include <math.h>
+
+#include <chrono>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -230,6 +234,9 @@ void *OSXComputer::getEventTarget() const
 
 bool OSXComputer::getClipboard(ClipboardID, IClipboard *dst) const
 {
+  // the carbon reference only sees items written by other processes after a
+  // synchronize, and a switch can trigger a read before the poll timer runs
+  m_pasteboard.synchronize();
   Clipboard::copy(dst, &m_pasteboard);
   return true;
 }
@@ -641,15 +648,21 @@ void OSXComputer::fakeMouseWheel(ScrollDelta delta) const
   }
 }
 
+namespace {
+//! The CGS connection property never changes per process, so keep the CFString
+//! around instead of rebuilding it on every cursor show/hide (switch path).
+void setCursorInBackground()
+{
+  static CFStringRef property =
+      CFStringCreateWithCString(nullptr, "SetsCursorInBackground", kCFStringEncodingMacRoman);
+  CGSSetConnectionProperty(_CGSDefaultConnection(), _CGSDefaultConnection(), property, kCFBooleanTrue);
+}
+} // namespace
+
 void OSXComputer::showCursor()
 {
   LOG_DEBUG("showing cursor");
-
-  CFStringRef propertyString = CFStringCreateWithCString(nullptr, "SetsCursorInBackground", kCFStringEncodingMacRoman);
-
-  CGSSetConnectionProperty(_CGSDefaultConnection(), _CGSDefaultConnection(), propertyString, kCFBooleanTrue);
-
-  CFRelease(propertyString);
+  setCursorInBackground();
 
   CGError error = CGDisplayShowCursor(m_displayID);
   if (error != kCGErrorSuccess) {
@@ -667,12 +680,7 @@ void OSXComputer::showCursor()
 void OSXComputer::hideCursor()
 {
   LOG_DEBUG("hiding cursor");
-
-  CFStringRef propertyString = CFStringCreateWithCString(nullptr, "SetsCursorInBackground", kCFStringEncodingMacRoman);
-
-  CGSSetConnectionProperty(_CGSDefaultConnection(), _CGSDefaultConnection(), propertyString, kCFBooleanTrue);
-
-  CFRelease(propertyString);
+  setCursorInBackground();
 
   CGError error = CGDisplayHideCursor(m_displayID);
   if (error != kCGErrorSuccess) {
@@ -689,6 +697,9 @@ void OSXComputer::hideCursor()
 
 void OSXComputer::enable()
 {
+  m_tapTimeoutCount = 0;
+  m_lastTapTimeoutMs = 0.0;
+
   // watch the clipboard
   m_clipboardTimer = m_events->newTimer(1.0, nullptr);
   m_events->addHandler(EventTypes::Timer, m_clipboardTimer, [this](const auto &) { checkClipboards(); });
@@ -793,8 +804,8 @@ void OSXComputer::enter()
   showCursor();
 
   if (m_isPrimary) {
-    // re-couple the mouse to the cursor, undoing the capture from leave()
-    CGAssociateMouseAndMouseCursorPosition(true);
+    // showCursor() already re-coupled the mouse to the cursor, only the
+    // suppression interval is left to reset here.
     setZeroSuppressionInterval();
   } else {
     // reset buttons
@@ -845,8 +856,17 @@ bool OSXComputer::setClipboard(ClipboardID, const IClipboard *src)
 void OSXComputer::checkClipboards()
 {
   LOG_VERBOSE("checking clipboard");
-  if (m_pasteboard.synchronize()) {
-    LOG_DEBUG("clipboard changed");
+
+  // PasteboardSynchronize() does not reliably report changes made by other
+  // processes on recent macOS versions, so poll the NSPasteboard change count
+  // and keep the Carbon pasteboard reference in sync for the actual read.
+  const auto changeCount = static_cast<int64_t>([[NSPasteboard generalPasteboard] changeCount]);
+  const bool modified = changeCount != m_pasteboardChangeCount;
+  m_pasteboardChangeCount = changeCount;
+
+  if (modified) {
+    m_pasteboard.synchronize();
+    LOG_DEBUG("clipboard changed (changeCount=%lld)", static_cast<long long>(changeCount));
     sendClipboardEvent(EventTypes::ClipboardGrabbed, kClipboardClipboard);
     sendClipboardEvent(EventTypes::ClipboardGrabbed, kClipboardSelection);
   }
@@ -1712,7 +1732,21 @@ CGEventRef OSXComputer::handleCGInputEvent(CGEventTapProxy proxy, CGEventType ty
     // Re-enable our event-tap if we still have accessibility permissions
     if (computer->checkAXPermissions()) {
       CGEventTapEnable(computer->m_eventTapPort, true);
-      LOG_INFO("quartz event tap was disabled by timeout, re-enabling");
+      const double nowMs =
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+      const double sinceLastMs = computer->m_lastTapTimeoutMs > 0.0 ? nowMs - computer->m_lastTapTimeoutMs : 0.0;
+      computer->m_lastTapTimeoutMs = nowMs;
+      ++computer->m_tapTimeoutCount;
+      LOG_INFO(
+          "quartz event tap was disabled by timeout, re-enabling (count=%d, since_last=%.0fms)",
+          computer->m_tapTimeoutCount, sinceLastMs
+      );
+      if (computer->m_tapTimeoutCount >= 5) {
+        LOG_WARN(
+            "quartz event tap keeps timing out (%d times); check Accessibility permission and system load",
+            computer->m_tapTimeoutCount
+        );
+      }
     }
     break;
   case kCGEventTapDisabledByUserInput:
@@ -1920,7 +1954,11 @@ void avoidSupression()
 
 void logCursorVisibility()
 {
-  // CGCursorIsVisible is probably deprecated because its unreliable.
+  // CGCursorIsVisible is deprecated and unreliable, and it costs a window server
+  // round trip; only query it when verbose logging is enabled.
+  if (CLOG->getFilter() < LogLevel::Level::Verbose) {
+    return;
+  }
   if (!CGCursorIsVisible()) {
     LOG_WARN("cursor may not be visible");
   }

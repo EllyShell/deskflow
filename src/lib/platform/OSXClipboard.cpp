@@ -10,7 +10,9 @@
 #include "arch/ArchException.h"
 #include "base/Log.h"
 #include "platform/OSXClipboardBMPConverter.h"
+#include "platform/OSXClipboardFileImageConverter.h"
 #include "platform/OSXClipboardHTMLConverter.h"
+#include "platform/OSXClipboardImageConverter.h"
 #include "platform/OSXClipboardTextConverter.h"
 #include "platform/OSXClipboardUTF16Converter.h"
 #include "platform/OSXClipboardUTF8Converter.h"
@@ -22,7 +24,13 @@
 OSXClipboard::OSXClipboard() : m_time(0), m_pboard(nullptr)
 {
   m_converters.push_back(new OSXClipboardHTMLConverter);
+  // most macOS applications publish images as png or tiff and never as
+  // com.microsoft.bmp, so those formats are tried first; bmp remains a fallback
+  m_converters.push_back(new OSXClipboardImageConverter(CFSTR("public.png")));
+  m_converters.push_back(new OSXClipboardImageConverter(CFSTR("public.tiff")));
   m_converters.push_back(new OSXClipboardBMPConverter);
+  // screenshot utilities publish a file url instead of image data
+  m_converters.push_back(new OSXClipboardFileImageConverter);
   m_converters.push_back(new OSXClipboardUTF8Converter);
   m_converters.push_back(new OSXClipboardUTF16Converter);
   m_converters.push_back(new OSXClipboardTextConverter);

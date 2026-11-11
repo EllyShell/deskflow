@@ -7,6 +7,9 @@
 
 #include "deskflow/Clipboard.h"
 #include "base/Log.h"
+#include "common/ClipboardText.h"
+
+#include <utility>
 
 //
 // Clipboard
@@ -56,7 +59,21 @@ void Clipboard::add(Format format, const std::string &data)
   }
 
   const auto formatID = static_cast<int>(format);
-  m_data[formatID] = data;
+  // text and html are defined to use LF only, so normalise here instead of
+  // trusting every platform converter to do it.
+  if (format == Format::Text || format == Format::HTML) {
+    auto normalised = deskflow::text::toLf(data);
+    if (normalised.size() != data.size()) {
+      // evidence that the source handed us CR line endings; without this the
+      // conversion would silently add blank lines on Windows.
+      LOG_DEBUG(
+          "clipboard: normalised line endings format=%d bytes=%zu->%zu", formatID, data.size(), normalised.size()
+      );
+    }
+    m_data[formatID] = std::move(normalised);
+  } else {
+    m_data[formatID] = data;
+  }
   m_added[formatID] = true;
 }
 

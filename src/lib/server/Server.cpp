@@ -29,12 +29,21 @@
 #include <algorithm>
 #include <array>
 #endif
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
 
 using namespace deskflow::server;
+
+namespace {
+//! steady clock in milliseconds, used by the switch latency instrumentation
+double switchNowMs()
+{
+  return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+} // namespace
 
 //
 // Server
@@ -440,6 +449,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
   // stop waiting to switch
   stopSwitch();
+  const double switchStartMs = switchNowMs();
 
   // record new position
   m_x = x;
@@ -459,6 +469,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
       LOG_WARN("can't leave computer");
       return;
     }
+    const double leaveDoneMs = switchNowMs();
 
     // update the primary client's clipboards if we're leaving the
     // primary computer.
@@ -491,6 +502,14 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
     // enter new computer
     m_active->enter(x, y, m_seqNum, m_primaryClient->getToggleMask(), forScreensaver);
+
+    // M0 observability: how long the hand off took, and how long until input
+    // starts flowing on the new computer again.
+    m_switchEnterMs = switchNowMs();
+    m_switchPending = true;
+    LOG_DEBUG(
+        "switch latency: leave=%.1fms enter=%.1fms", leaveDoneMs - switchStartMs, m_switchEnterMs - leaveDoneMs
+    );
 
     if (m_enableClipboard) {
       // send the clipboard data to new active computer
@@ -1129,6 +1148,13 @@ void Server::processOptions()
   }
   m_relativeMoves = newRelativeMoves;
   m_protocol = Settings::networkProtocol();
+
+  // M0 observability: record the options that are actually in effect, so a
+  // stalled edge switch can be traced to the configuration instead of guesswork.
+  LOG_DEBUG(
+      "effective switch options: delay=%.0fms doubleTap=%.0fms clipboard=%d clipboardLimit=%zuKB",
+      m_switchWaitDelay * 1.0e3, m_switchTwoTapDelay * 1.0e3, m_enableClipboard ? 1 : 0, m_maximumClipboardSize
+  );
 }
 
 void Server::handleShapeChanged(BaseClientProxy *client)
@@ -1455,7 +1481,9 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
 
   std::string data = clipboard.m_clipboard.marshall();
   if (data.size() > m_maximumClipboardSize * 1024) {
-    LOG_WARN("not sending clipboard data, exceeds limit: %i KB", m_maximumClipboardSize);
+    LOG_WARN(
+        "not sending clipboard data, exceeds limit: %zu KB (size: %zu bytes)", m_maximumClipboardSize, data.size()
+    );
     return;
   }
 
@@ -1618,6 +1646,11 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
     return false;
   }
 
+  if (m_switchPending) {
+    m_switchPending = false;
+    LOG_DEBUG("switch latency: first_move=%.1fms", switchNowMs() - m_switchEnterMs);
+  }
+
   // save last delta
   m_xDelta2 = m_xDelta;
   m_yDelta2 = m_yDelta;
@@ -1727,6 +1760,11 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
   if (m_active == m_primaryClient) {
     // stale event -- we're actually on the primary computer
     return;
+  }
+
+  if (m_switchPending) {
+    m_switchPending = false;
+    LOG_DEBUG("switch latency: first_move=%.1fms", switchNowMs() - m_switchEnterMs);
   }
 
   // if doing relative motion on secondary computers and we're locked

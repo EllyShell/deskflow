@@ -10,8 +10,11 @@
 
 #include "platform/MSWindowsClipboard.h"
 #include "platform/MSWindowsClipboardBitmapConverter.h"
+#include "platform/MSWindowsClipboardPNGConverter.h"
 
 #include <QtEndian>
+
+#include <cstring>
 
 void MSWindowsClipboardTests::initTestCase()
 {
@@ -196,6 +199,72 @@ void MSWindowsClipboardTests::preservesHealthyMacV5Bitmap()
   QCOMPARE(std::string(result, GlobalSize(handle)), dib);
   GlobalUnlock(handle);
   GlobalFree(handle);
+}
+
+void MSWindowsClipboardTests::pngRoundTrip()
+{
+  MSWindowsClipboardPNGConverter converter;
+  QCOMPARE(IClipboard::Format::Bitmap, converter.getFormat());
+
+  // 2x2 32bpp BI_RGB bottom-up DIB: bottom row red/green, top row blue/white.
+  // Alpha is deliberately 0 to prove the converter publishes opaque pixels.
+  const unsigned char bottomRow[] = {0, 0, 255, 0, 0, 255, 0, 0};
+  const unsigned char topRow[] = {255, 0, 0, 0, 255, 255, 255, 0};
+  std::string dib(40, '\0');
+  auto *header = reinterpret_cast<unsigned char *>(dib.data());
+  qToLittleEndian<quint32>(40, header + 0);
+  qToLittleEndian<qint32>(2, header + 4);
+  qToLittleEndian<qint32>(2, header + 8);
+  qToLittleEndian<quint16>(1, header + 12);
+  qToLittleEndian<quint16>(32, header + 14);
+  qToLittleEndian<quint32>(0, header + 16);
+  qToLittleEndian<quint32>(16, header + 20);
+  dib.append(reinterpret_cast<const char *>(bottomRow), sizeof(bottomRow));
+  dib.append(reinterpret_cast<const char *>(topRow), sizeof(topRow));
+
+  HANDLE pngHandle = converter.fromIClipboard(dib);
+  QVERIFY(pngHandle != nullptr);
+
+  std::string png;
+  {
+    const auto *data = static_cast<const char *>(GlobalLock(pngHandle));
+    QVERIFY(data != nullptr);
+    png.assign(data, static_cast<size_t>(GlobalSize(pngHandle)));
+    GlobalUnlock(pngHandle);
+  }
+  QVERIFY(png.size() > 8);
+  QCOMPARE(static_cast<int>(static_cast<unsigned char>(png[0])), 0x89);
+  QCOMPARE(png.substr(1, 3), std::string("PNG"));
+
+  const std::string roundTrip = converter.toIClipboard(pngHandle);
+  GlobalFree(pngHandle);
+
+  QVERIFY(!roundTrip.empty());
+  QCOMPARE(roundTrip.size(), dib.size());
+
+  const auto *rt = reinterpret_cast<const unsigned char *>(roundTrip.data());
+  QCOMPARE(qFromLittleEndian<quint32>(rt + 0), 40u);
+  QCOMPARE(qFromLittleEndian<qint32>(rt + 4), 2);
+  QCOMPARE(qFromLittleEndian<qint32>(rt + 8), 2);
+  QCOMPARE(qFromLittleEndian<quint16>(rt + 14), static_cast<quint16>(32));
+  QCOMPARE(qFromLittleEndian<quint32>(rt + 16), 0u);
+
+  std::string expected = dib.substr(40);
+  for (size_t i = 3; i < expected.size(); i += 4) {
+    expected[i] = static_cast<char>(0xFF);
+  }
+  QCOMPARE(roundTrip.substr(40), expected);
+
+  // garbage must be rejected instead of producing a header only DIB
+  HGLOBAL junk = GlobalAlloc(GMEM_MOVEABLE, 11);
+  QVERIFY(junk != nullptr);
+  {
+    auto *dst = static_cast<char *>(GlobalLock(junk));
+    memcpy(dst, "not an imge", 11);
+    GlobalUnlock(junk);
+  }
+  QVERIFY(converter.toIClipboard(junk).empty());
+  GlobalFree(junk);
 }
 
 QTEST_MAIN(MSWindowsClipboardTests)

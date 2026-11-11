@@ -7,10 +7,12 @@
 #include "platform/PortalClipboard.h"
 
 #include "base/Log.h"
+#include "common/ClipboardText.h"
 #include "platform/EiClipboard.h"
 
 #include <cstring>
 #include <poll.h>
+#include <string_view>
 #include <unistd.h>
 
 #include <QBuffer>
@@ -303,7 +305,11 @@ bool PortalClipboard::readSelectionIntoCache(
     if (entry.format != IClipboard::Format::Bitmap) {
       while (bytes.endsWith('\0'))
         bytes.chop(1);
-      bytes.replace("\r\n", "\n");
+      // GTK normalises text to CRLF internally (mozilla bug 1547595); the
+      // internal clipboard is defined to be LF only.
+      const std::string normalised =
+          deskflow::text::toLf(std::string_view(bytes.constData(), static_cast<size_t>(bytes.size())));
+      bytes = QByteArray(normalised.data(), static_cast<int>(normalised.size()));
     }
 
     auto data = decodeFormat(entry.format, bytes);

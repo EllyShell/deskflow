@@ -1100,6 +1100,10 @@ Al habilitar esta opción, se deshabilitará la interfaz gráfica de usuario (GU
         <source>Enable lock to computer at startup</source>
         <translation type="unfinished">Activar el bloqueo del ordenador al iniciar</translation>
     </message>
+    <message>
+        <source>Images are shared uncompressed (about width × height × 4 bytes), so a 1080p screenshot is roughly 8 MB and a 4K one about 32 MB. Increase the limit if large screenshots do not arrive.</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>SettingsDialog</name>

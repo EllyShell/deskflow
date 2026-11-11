@@ -256,8 +256,14 @@ private:
   OSXKeyState *m_keyState;
 
   // clipboards
-  OSXClipboard m_pasteboard;
+  mutable OSXClipboard m_pasteboard;
   uint32_t m_sequenceNumber;
+  //! NSPasteboard changeCount of the last observed clipboard state
+  /*!
+  Carbon's PasteboardSynchronize does not reliably report changes made by other
+  processes on recent macOS releases, so the change count is used to detect them.
+  */
+  int64_t m_pasteboardChangeCount = -1;
 
   // screen saver stuff
   OSXScreenSaver *m_screensaver;
@@ -304,6 +310,11 @@ private:
   CFRunLoopSourceRef m_eventTapRLSR;
   std::thread m_eventTapThread;
   CFRunLoopRef m_eventTapRunLoop = nullptr;
+
+  // event tap health (R3-4): a tap disabled by timeout stalls all input until
+  // it is re-enabled, so count and surface the occurrences
+  int m_tapTimeoutCount = 0;
+  double m_lastTapTimeoutMs = 0.0;
 
   // for double click coalescing.
   double m_lastClickTime;

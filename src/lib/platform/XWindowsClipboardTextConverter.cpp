@@ -7,6 +7,8 @@
 
 #include "platform/XWindowsClipboardTextConverter.h"
 
+#include "common/ClipboardText.h"
+
 #include <QString>
 
 //
@@ -41,5 +43,5 @@ std::string XWindowsClipboardTextConverter::fromIClipboard(const std::string &da
 
 std::string XWindowsClipboardTextConverter::toIClipboard(const std::string &data) const
 {
-  return QString::fromLatin1(data).toUtf8().toStdString();
+  return deskflow::text::toLf(QString::fromLatin1(data).toUtf8().toStdString());
 }

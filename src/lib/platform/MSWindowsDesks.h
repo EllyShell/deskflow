@@ -221,6 +221,20 @@ private:
   void waitForDesk() const;
   void sendMessage(UINT, WPARAM, LPARAM) const;
 
+  //! Post a mouse move without waiting for the desk thread
+  /*!
+  Mouse moves are coalesced: only the newest absolute position and the sum of
+  the pending relative deltas are kept, and a single wake message is posted
+  while one is already queued. This keeps the injection path off the core event
+  thread, which otherwise blocks on every move and serialises the network
+  stream behind it.
+  */
+  void postMouseMove(int32_t x, int32_t y) const;
+  void postMouseRelativeMove(int32_t dx, int32_t dy) const;
+  //! Take the pending move state, called from the desk thread
+  bool takePendingMove(int32_t &x, int32_t &y) const;
+  bool takePendingRelativeMove(int32_t &dx, int32_t &dy) const;
+
   // work around for messed up keyboard events from low-level hooks
   HWND getForegroundWindow() const;
 
@@ -274,6 +288,17 @@ private:
   Mutex m_mutex;
   CondVar<bool> m_deskReady;
   Desks m_desks;
+
+  // coalesced mouse move state, guarded by m_moveMutex
+  mutable Mutex m_moveMutex;
+  mutable int32_t m_pendingMoveX = 0;
+  mutable int32_t m_pendingMoveY = 0;
+  mutable int32_t m_pendingRelativeMoveX = 0;
+  mutable int32_t m_pendingRelativeMoveY = 0;
+  mutable bool m_movePending = false;
+  mutable bool m_relativeMovePending = false;
+  mutable bool m_moveWakeQueued = false;
+  mutable bool m_relativeMoveWakeQueued = false;
 
   // keyboard stuff
   IJob *m_updateKeys;

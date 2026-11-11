@@ -302,12 +302,92 @@ void MSWindowsDesks::fakeMouseButton(ButtonID button, bool press)
 
 void MSWindowsDesks::fakeMouseMove(int32_t x, int32_t y) const
 {
-  sendMessage(DESKFLOW_MSG_FAKE_MOVE, static_cast<WPARAM>(x), static_cast<LPARAM>(y));
+  postMouseMove(x, y);
 }
 
 void MSWindowsDesks::fakeMouseRelativeMove(int32_t dx, int32_t dy) const
 {
-  sendMessage(DESKFLOW_MSG_FAKE_REL_MOVE, static_cast<WPARAM>(dx), static_cast<LPARAM>(dy));
+  postMouseRelativeMove(dx, dy);
+}
+
+void MSWindowsDesks::postMouseMove(int32_t x, int32_t y) const
+{
+  if (m_activeDesk == nullptr || m_activeDesk->m_window == nullptr) {
+    return;
+  }
+
+  bool post = false;
+  {
+    Lock lock(&m_moveMutex);
+    m_pendingMoveX = x;
+    m_pendingMoveY = y;
+    m_movePending = true;
+    if (!m_moveWakeQueued) {
+      m_moveWakeQueued = true;
+      post = true;
+    }
+  }
+
+  if (post && PostThreadMessage(m_activeDesk->m_threadID, DESKFLOW_MSG_FAKE_MOVE, 0, 0) == 0) {
+    // do not leave the wake flag set if the message could not be queued,
+    // otherwise every later move would be dropped
+    Lock lock(&m_moveMutex);
+    m_moveWakeQueued = false;
+  }
+}
+
+void MSWindowsDesks::postMouseRelativeMove(int32_t dx, int32_t dy) const
+{
+  if (m_activeDesk == nullptr || m_activeDesk->m_window == nullptr) {
+    return;
+  }
+
+  bool post = false;
+  {
+    Lock lock(&m_moveMutex);
+    m_pendingRelativeMoveX += dx;
+    m_pendingRelativeMoveY += dy;
+    m_relativeMovePending = true;
+    if (!m_relativeMoveWakeQueued) {
+      m_relativeMoveWakeQueued = true;
+      post = true;
+    }
+  }
+
+  if (post && PostThreadMessage(m_activeDesk->m_threadID, DESKFLOW_MSG_FAKE_REL_MOVE, 0, 0) == 0) {
+    Lock lock(&m_moveMutex);
+    m_relativeMoveWakeQueued = false;
+  }
+}
+
+bool MSWindowsDesks::takePendingMove(int32_t &x, int32_t &y) const
+{
+  Lock lock(&m_moveMutex);
+  m_moveWakeQueued = false;
+  if (!m_movePending) {
+    return false;
+  }
+
+  x = m_pendingMoveX;
+  y = m_pendingMoveY;
+  m_movePending = false;
+  return true;
+}
+
+bool MSWindowsDesks::takePendingRelativeMove(int32_t &dx, int32_t &dy) const
+{
+  Lock lock(&m_moveMutex);
+  m_relativeMoveWakeQueued = false;
+  if (!m_relativeMovePending) {
+    return false;
+  }
+
+  dx = m_pendingRelativeMoveX;
+  dy = m_pendingRelativeMoveY;
+  m_pendingRelativeMoveX = 0;
+  m_pendingRelativeMoveY = 0;
+  m_relativeMovePending = false;
+  return true;
 }
 
 void MSWindowsDesks::fakeMouseWheel(int32_t xDelta, int32_t yDelta) const
@@ -734,13 +814,25 @@ void MSWindowsDesks::deskThread(const void *vdesk)
       }
       break;
 
-    case DESKFLOW_MSG_FAKE_MOVE:
-      deskMouseMove(static_cast<int32_t>(msg.wParam), static_cast<int32_t>(msg.lParam));
-      break;
+    case DESKFLOW_MSG_FAKE_MOVE: {
+      // coalesced: only the newest position is injected, and nobody waits for
+      // this message so the desk ready condition must not be signalled
+      int32_t x = 0;
+      int32_t y = 0;
+      if (takePendingMove(x, y)) {
+        deskMouseMove(x, y);
+      }
+      continue;
+    }
 
-    case DESKFLOW_MSG_FAKE_REL_MOVE:
-      deskMouseRelativeMove(static_cast<int32_t>(msg.wParam), static_cast<int32_t>(msg.lParam));
-      break;
+    case DESKFLOW_MSG_FAKE_REL_MOVE: {
+      int32_t dx = 0;
+      int32_t dy = 0;
+      if (takePendingRelativeMove(dx, dy)) {
+        deskMouseRelativeMove(dx, dy);
+      }
+      continue;
+    }
 
     case DESKFLOW_MSG_FAKE_WHEEL:
       // XXX -- add support for x-axis scrolling
@@ -866,6 +958,13 @@ void MSWindowsDesks::checkDesk()
     // switch desk
     m_activeDesk = desk;
     m_activeDeskName = name;
+    {
+      // wake messages for the previous desk died with its message queue; allow
+      // a new wake to be posted for the new desk (pending coordinates are kept)
+      Lock lock(&m_moveMutex);
+      m_moveWakeQueued = false;
+      m_relativeMoveWakeQueued = false;
+    }
     sendMessage(DESKFLOW_MSG_SWITCH, 0, 0);
 
     // hide cursor on new desk

@@ -44,6 +44,8 @@ if(WIN32)
     MSWindowsClipboardFacade.h
     MSWindowsClipboardHTMLConverter.cpp
     MSWindowsClipboardHTMLConverter.h
+    MSWindowsClipboardPNGConverter.cpp
+    MSWindowsClipboardPNGConverter.h
     MSWindowsClipboardUTF16Converter.cpp
     MSWindowsClipboardUTF16Converter.h
     MSWindowsComputer.cpp
@@ -82,8 +84,12 @@ elseif(APPLE)
     OSXClipboardAnyTextConverter.h
     OSXClipboardBMPConverter.cpp
     OSXClipboardBMPConverter.h
+    OSXClipboardFileImageConverter.cpp
+    OSXClipboardFileImageConverter.h
     OSXClipboardHTMLConverter.cpp
     OSXClipboardHTMLConverter.h
+    OSXClipboardImageConverter.cpp
+    OSXClipboardImageConverter.h
     OSXClipboardTextConverter.cpp
     OSXClipboardTextConverter.h
     OSXClipboardUTF8Converter.cpp
@@ -191,12 +197,18 @@ add_library(platform STATIC ${PLATFORM_SOURCES})
 
 target_link_libraries(platform PUBLIC client ${libs})
 
+if(WIN32)
+  # WIC (windowscodecs) is used to transcode png clipboard images, ole32 for COM
+  target_link_libraries(platform PUBLIC windowscodecs ole32)
+endif()
+
 if(UNIX)
   target_link_libraries(platform PRIVATE net app)
 
   if(APPLE)
     find_library(COCOA_LIBRARY Cocoa)
-    target_link_libraries(platform PUBLIC ${COCOA_LIBRARY})
+    find_library(IMAGEIO_LIBRARY ImageIO)
+    target_link_libraries(platform PUBLIC ${COCOA_LIBRARY} ${IMAGEIO_LIBRARY})
   else()
     if(${LIBXKBCOMMON_VERSION} VERSION_GREATER_EQUAL "1.10")
       target_compile_definitions(platform PRIVATE HAVE_XKB_KEYMAP_MOD_GET_MASK=1)

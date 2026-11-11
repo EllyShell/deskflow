@@ -16,7 +16,7 @@ public:
   /*!
   \c name is converted to an atom and that is reported by getAtom().
   */
-  XWindowsClipboardUTF8Converter(Display *display, const char *name, bool normalize = false);
+  XWindowsClipboardUTF8Converter(Display *display, const char *name);
   ~XWindowsClipboardUTF8Converter() override = default;
 
   // IXWindowsClipboardConverter overrides
@@ -28,5 +28,4 @@ public:
 
 private:
   Atom m_atom;
-  bool m_normalize;
 };

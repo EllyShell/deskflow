@@ -12,6 +12,7 @@
 #include "platform/MSWindowsClipboardBitmapConverter.h"
 #include "platform/MSWindowsClipboardFacade.h"
 #include "platform/MSWindowsClipboardHTMLConverter.h"
+#include "platform/MSWindowsClipboardPNGConverter.h"
 #include "platform/MSWindowsClipboardUTF16Converter.h"
 
 //
@@ -29,6 +30,8 @@ MSWindowsClipboard::MSWindowsClipboard(HWND window)
   // add converters, most desired first
   m_converters.push_back(new MSWindowsClipboardUTF16Converter);
   m_converters.push_back(new MSWindowsClipboardBitmapConverter);
+  // png covers browser / electron / screenshot sources that never publish CF_DIB
+  m_converters.push_back(new MSWindowsClipboardPNGConverter);
   m_converters.push_back(new MSWindowsClipboardHTMLConverter);
 }
 
@@ -86,30 +89,32 @@ void MSWindowsClipboard::add(Format format, const std::string &data)
 {
   // exit early if there is no data to prevent spurious "failed to convert clipboard data" errors
   if (data.empty()) {
-    LOG_DEBUG("not adding 0 bytes to clipboard format: %d", format);
+    LOG_INFO("clipboard: dropped reason=empty format=%d", static_cast<int>(format));
     return;
   }
   bool isSucceeded = false;
-  // convert data to win32 form
+  // write every converter that handles this format: applications that only
+  // accept "PNG" and applications that only accept CF_DIB are both covered
   for (ConverterList::const_iterator index = m_converters.begin(); index != m_converters.end(); ++index) {
     IMSWindowsClipboardConverter *converter = *index;
 
-    // skip converters for other formats
-    if (converter->getFormat() == format) {
-      HANDLE win32Data = converter->fromIClipboard(data);
-      if (win32Data != nullptr) {
-        LOG_DEBUG("add %d bytes to clipboard format: %d", data.size(), format);
-        m_facade->write(win32Data, converter->getWin32Format());
-        isSucceeded = true;
-        break;
-      } else {
-        LOG_DEBUG("failed to convert clipboard data to platform format");
-      }
+    if (converter->getFormat() != format) {
+      continue;
     }
+
+    HANDLE win32Data = converter->fromIClipboard(data);
+    if (win32Data == nullptr) {
+      LOG_VERBOSE("clipboard: converter skipped format=%d", static_cast<int>(format));
+      continue;
+    }
+
+    LOG_DEBUG("add %d bytes to clipboard format: %d", data.size(), static_cast<int>(format));
+    m_facade->write(win32Data, converter->getWin32Format());
+    isSucceeded = true;
   }
 
   if (!isSucceeded) {
-    LOG_DEBUG("missed clipboard data convert for format: %d", format);
+    LOG_INFO("clipboard: dropped reason=unsupported format=%d bytes=%zu", static_cast<int>(format), data.size());
   }
 }
 
