@@ -32,6 +32,7 @@ private Q_SLOTS:
   void preservesHealthyMacV5Bitmap();
   void pngRoundTrip();
   void filePayloadRoundTrip();
+  void copySystemClipboardFile();
 
 private:
   Log m_log;

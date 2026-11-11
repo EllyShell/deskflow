@@ -258,6 +258,14 @@ void Client::setClipboard(ClipboardID id, const IClipboard *clipboard)
 
 void Client::grabClipboard(ClipboardID id)
 {
+  // the grab wipes our clipboard, so hand over anything we still own and have
+  // not sent yet (happens when the server learns about a copy on another
+  // computer before we ever left this one, e.g. copying a file and then
+  // moving the pointer away)
+  if (m_enableClipboard && m_ownClipboard[id] && !m_sentClipboard[id]) {
+    sendClipboard(id);
+  }
+
   m_computer->grabClipboard(id);
   m_ownClipboard[id] = false;
   m_sentClipboard[id] = false;

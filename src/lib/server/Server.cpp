@@ -1209,8 +1209,15 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
 
   // ignore grab if sequence number is old.  always allow primary
   // computer to grab.
+  //
+  // the sequence number of a grab is generated on the computer that grabbed
+  // it, so a client counter and the server counter are unrelated: comparing
+  // them dropped every grab from a freshly started client (its counter starts
+  // at zero while the server had already seen the primary's). only discard a
+  // grab that repeats the current owner with an older number.
   ClipboardInfo &clipboard = m_clipboards[info->m_id];
-  if (grabber != m_primaryClient && info->m_sequenceNumber < clipboard.m_clipboardSeqNum) {
+  const bool sameOwner = clipboard.m_clipboardOwner == getName(grabber);
+  if (grabber != m_primaryClient && sameOwner && info->m_sequenceNumber < clipboard.m_clipboardSeqNum) {
     LOG_DEBUG("ignored computer \"%s\" grab of clipboard %d", getName(grabber).c_str(), info->m_id);
     return;
   }

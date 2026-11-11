@@ -10,6 +10,7 @@
 
 #include "platform/MSWindowsClipboard.h"
 #include "platform/MSWindowsClipboardBitmapConverter.h"
+#include "deskflow/Clipboard.h"
 #include "platform/MSWindowsClipboardFileConverter.h"
 #include "platform/MSWindowsClipboardPNGConverter.h"
 
@@ -278,6 +279,15 @@ void MSWindowsClipboardTests::pngRoundTrip()
 
 void MSWindowsClipboardTests::filePayloadRoundTrip()
 {
+  // remove leftovers from earlier runs so the writer does not need to dedupe
+  for (int index = 0; index < 10; ++index) {
+    const QString leftover = QDir::temp().filePath(
+        index == 0 ? QStringLiteral("deskflow-win-file-payload.txt")
+                   : QStringLiteral("deskflow-win-file-payload-%1.txt").arg(index)
+    );
+    QFile::remove(leftover);
+  }
+
   MSWindowsClipboardFileConverter converter;
   QCOMPARE(IClipboard::Format::File, converter.getFormat());
   QCOMPARE(static_cast<UINT>(CF_HDROP), converter.getWin32Format());
@@ -321,11 +331,53 @@ void MSWindowsClipboardTests::filePayloadRoundTrip()
   QVERIFY(length > 0);
 
   const QString received = QString::fromWCharArray(buffer.data(), static_cast<int>(length));
-  QVERIFY(received.endsWith(QStringLiteral("deskflow-win-file-payload.txt")));
+  QVERIFY(received.contains(QStringLiteral("deskflow-win-file-payload")));
   QFile roundTrip(received);
   QVERIFY(roundTrip.open(QIODevice::ReadOnly));
   QCOMPARE(roundTrip.readAll(), content);
   GlobalFree(result);
+}
+
+void MSWindowsClipboardTests::copySystemClipboardFile()
+{
+  // mirror what the client does when it reads the system clipboard: open it,
+  // then ask each converter whether its format is available
+  const QString path = QDir::temp().filePath(QStringLiteral("deskflow-copy-from-system.txt"));
+  QFile file(path);
+  QVERIFY(file.open(QIODevice::WriteOnly));
+  file.write("copied file\n");
+  file.close();
+
+  const std::wstring wide = QDir::toNativeSeparators(path).toStdWString();
+  const size_t headerSize = sizeof(DROPFILES);
+  HGLOBAL dropHandle = GlobalAlloc(GMEM_MOVEABLE, headerSize + (wide.size() + 2) * sizeof(wchar_t));
+  QVERIFY(dropHandle != nullptr);
+  {
+    auto *drop = static_cast<DROPFILES *>(GlobalLock(dropHandle));
+    QVERIFY(drop != nullptr);
+    memset(drop, 0, headerSize);
+    drop->pFiles = static_cast<DWORD>(headerSize);
+    drop->fWide = TRUE;
+    auto *target = reinterpret_cast<wchar_t *>(reinterpret_cast<BYTE *>(drop) + headerSize);
+    memcpy(target, wide.c_str(), wide.size() * sizeof(wchar_t));
+    target[wide.size()] = L'\0';
+    target[wide.size() + 1] = L'\0';
+    GlobalUnlock(dropHandle);
+  }
+
+  QVERIFY(OpenClipboard(nullptr));
+  EmptyClipboard();
+  QVERIFY(SetClipboardData(CF_HDROP, dropHandle) != nullptr);
+  CloseClipboard();
+
+  QVERIFY2(IsClipboardFormatAvailable(CF_HDROP), "CF_HDROP not available after set");
+
+  MSWindowsClipboard source(nullptr);
+  QVERIFY2(source.open(0), "OpenClipboard failed");
+  QVERIFY2(source.has(IClipboard::Format::File), "converter says no file format");
+  const std::string payload = source.get(IClipboard::Format::File);
+  source.close();
+  QVERIFY2(!payload.empty(), "file converter produced an empty payload");
 }
 
 QTEST_MAIN(MSWindowsClipboardTests)
