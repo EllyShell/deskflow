@@ -807,6 +807,18 @@ void OSXComputer::enter()
     // showCursor() already re-coupled the mouse to the cursor, only the
     // suppression interval is left to reset here.
     setZeroSuppressionInterval();
+
+    // resync the tracked cursor position: while the pointer was on another
+    // computer the cursor was frozen, and the system may have moved it in the
+    // meantime, so the next motion would otherwise produce a bogus jump
+    CGEventRef posEvent = CGEventCreate(nullptr);
+    if (posEvent != nullptr) {
+      const CGPoint pos = CGEventGetLocation(posEvent);
+      CFRelease(posEvent);
+      m_xCursor = static_cast<int32_t>(pos.x);
+      m_yCursor = static_cast<int32_t>(pos.y);
+      LOG_DEBUG("resynced cursor position on enter: %d,%d", m_xCursor, m_yCursor);
+    }
   } else {
     // reset buttons
     m_buttonState.reset();

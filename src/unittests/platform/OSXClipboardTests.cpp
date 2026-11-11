@@ -10,6 +10,7 @@
 
 #include "platform/OSXClipboard.h"
 #include "platform/OSXClipboardImageConverter.h"
+#include "common/ClipboardFile.h"
 #include "platform/OSXClipboardUTF8Converter.h"
 
 #include <QDir>
@@ -238,6 +239,47 @@ void OSXClipboardTests::fileUrlImage()
   QCOMPARE(qFromLittleEndian<qint32>(rt + 4), 2);
   QCOMPARE(qFromLittleEndian<qint32>(rt + 8), 2);
   QCOMPARE(result.substr(40), expectedPixels());
+}
+
+void OSXClipboardTests::filePayload()
+{
+  using enum IClipboard::Format;
+
+  const QString path = QDir::temp().filePath(QStringLiteral("deskflow-file-payload-test.txt"));
+  const QByteArray content("payload from the mac side\n");
+  QFile source(path);
+  QVERIFY(source.open(QIODevice::WriteOnly));
+  source.write(content);
+  source.close();
+
+  PasteboardRef board = nullptr;
+  QCOMPARE(PasteboardCreate(kPasteboardClipboard, &board), noErr);
+  QVERIFY(board != nullptr);
+  PasteboardClear(board);
+
+  const QByteArray url = QUrl::fromLocalFile(path).toString(QUrl::FullyEncoded).toUtf8();
+  CFDataRef data = CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(url.constData()), url.size());
+  QVERIFY(data != nullptr);
+  PasteboardItemID itemID = 0;
+  const OSStatus put = PasteboardPutItemFlavor(board, itemID, CFSTR("public.file-url"), data, 0);
+  CFRelease(data);
+  CFRelease(board);
+  QCOMPARE(put, noErr);
+
+  OSXClipboard clipboard;
+  QVERIFY(clipboard.open(0));
+  QVERIFY(clipboard.has(File));
+  const std::string payload = clipboard.get(File);
+  clipboard.close();
+  QVERIFY(!payload.empty());
+
+  // the payload must round trip back into a file with the same content
+  QString received;
+  QVERIFY(deskflow::files::writeFilePayload(payload, received));
+  QVERIFY(received.endsWith(QStringLiteral("deskflow-file-payload-test.txt")));
+  QFile result(received);
+  QVERIFY(result.open(QIODevice::ReadOnly));
+  QCOMPARE(result.readAll(), content);
 }
 
 QTEST_MAIN(OSXClipboardTests)

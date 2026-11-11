@@ -12,6 +12,7 @@
 #include "platform/MSWindowsClipboardBitmapConverter.h"
 #include "platform/MSWindowsClipboardFacade.h"
 #include "platform/MSWindowsClipboardHTMLConverter.h"
+#include "platform/MSWindowsClipboardFileConverter.h"
 #include "platform/MSWindowsClipboardPNGConverter.h"
 #include "platform/MSWindowsClipboardUTF16Converter.h"
 
@@ -32,6 +33,7 @@ MSWindowsClipboard::MSWindowsClipboard(HWND window)
   m_converters.push_back(new MSWindowsClipboardBitmapConverter);
   // png covers browser / electron / screenshot sources that never publish CF_DIB
   m_converters.push_back(new MSWindowsClipboardPNGConverter);
+  m_converters.push_back(new MSWindowsClipboardFileConverter);
   m_converters.push_back(new MSWindowsClipboardHTMLConverter);
 }
 

@@ -31,6 +31,7 @@ private Q_SLOTS:
   void normalisesMalformedMacBitmap();
   void preservesHealthyMacV5Bitmap();
   void pngRoundTrip();
+  void filePayloadRoundTrip();
 
 private:
   Log m_log;

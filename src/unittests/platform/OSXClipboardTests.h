@@ -20,6 +20,7 @@ private Q_SLOTS:
   void formatConvert_Tiff();
   void readTiffOnly();
   void fileUrlImage();
+  void filePayload();
 
 private:
   Log m_log;

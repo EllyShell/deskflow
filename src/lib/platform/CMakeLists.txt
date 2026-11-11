@@ -42,6 +42,8 @@ if(WIN32)
     MSWindowsClipboardBitmapConverter.h
     MSWindowsClipboardFacade.cpp
     MSWindowsClipboardFacade.h
+    MSWindowsClipboardFileConverter.cpp
+    MSWindowsClipboardFileConverter.h
     MSWindowsClipboardHTMLConverter.cpp
     MSWindowsClipboardHTMLConverter.h
     MSWindowsClipboardPNGConverter.cpp
@@ -84,6 +86,8 @@ elseif(APPLE)
     OSXClipboardAnyTextConverter.h
     OSXClipboardBMPConverter.cpp
     OSXClipboardBMPConverter.h
+    OSXClipboardFileConverter.cpp
+    OSXClipboardFileConverter.h
     OSXClipboardFileImageConverter.cpp
     OSXClipboardFileImageConverter.h
     OSXClipboardHTMLConverter.cpp
@@ -199,7 +203,7 @@ target_link_libraries(platform PUBLIC client ${libs})
 
 if(WIN32)
   # WIC (windowscodecs) is used to transcode png clipboard images, ole32 for COM
-  target_link_libraries(platform PUBLIC windowscodecs ole32)
+  target_link_libraries(platform PUBLIC windowscodecs shell32 ole32)
 endif()
 
 if(UNIX)

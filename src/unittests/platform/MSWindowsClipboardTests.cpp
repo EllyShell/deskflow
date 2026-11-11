@@ -10,11 +10,20 @@
 
 #include "platform/MSWindowsClipboard.h"
 #include "platform/MSWindowsClipboardBitmapConverter.h"
+#include "platform/MSWindowsClipboardFileConverter.h"
 #include "platform/MSWindowsClipboardPNGConverter.h"
 
 #include <QtEndian>
 
+#include <QDir>
+#include <QFile>
+
+#include <shellapi.h>
+#include <shlobj.h>
+
 #include <cstring>
+#include <string>
+#include <vector>
 
 void MSWindowsClipboardTests::initTestCase()
 {
@@ -265,6 +274,58 @@ void MSWindowsClipboardTests::pngRoundTrip()
   }
   QVERIFY(converter.toIClipboard(junk).empty());
   GlobalFree(junk);
+}
+
+void MSWindowsClipboardTests::filePayloadRoundTrip()
+{
+  MSWindowsClipboardFileConverter converter;
+  QCOMPARE(IClipboard::Format::File, converter.getFormat());
+  QCOMPARE(static_cast<UINT>(CF_HDROP), converter.getWin32Format());
+
+  const QString path = QDir::temp().filePath(QStringLiteral("deskflow-win-file-payload.txt"));
+  const QByteArray content("payload from the windows side\n");
+  QFile file(path);
+  QVERIFY(file.open(QIODevice::WriteOnly));
+  file.write(content);
+  file.close();
+
+  // build a CF_HDROP the same way explorer does
+  const std::wstring wide = QDir::toNativeSeparators(path).toStdWString();
+  const size_t headerSize = sizeof(DROPFILES);
+  const size_t dataSize = (wide.size() + 2) * sizeof(wchar_t);
+  HGLOBAL dropHandle = GlobalAlloc(GMEM_MOVEABLE, headerSize + dataSize);
+  QVERIFY(dropHandle != nullptr);
+  {
+    auto *drop = static_cast<DROPFILES *>(GlobalLock(dropHandle));
+    QVERIFY(drop != nullptr);
+    memset(drop, 0, headerSize);
+    drop->pFiles = static_cast<DWORD>(headerSize);
+    drop->fWide = TRUE;
+    auto *target = reinterpret_cast<wchar_t *>(reinterpret_cast<BYTE *>(drop) + headerSize);
+    memcpy(target, wide.c_str(), wide.size() * sizeof(wchar_t));
+    target[wide.size()] = L'\0';
+    target[wide.size() + 1] = L'\0';
+    GlobalUnlock(dropHandle);
+  }
+
+  const std::string payload = converter.toIClipboard(dropHandle);
+  GlobalFree(dropHandle);
+  QVERIFY(!payload.empty());
+
+  HANDLE result = converter.fromIClipboard(payload);
+  QVERIFY(result != nullptr);
+
+  QCOMPARE(DragQueryFileW(static_cast<HDROP>(result), 0xFFFFFFFF, nullptr, 0), static_cast<UINT>(1));
+  std::vector<wchar_t> buffer(32768);
+  const UINT length = DragQueryFileW(static_cast<HDROP>(result), 0, buffer.data(), 32768);
+  QVERIFY(length > 0);
+
+  const QString received = QString::fromWCharArray(buffer.data(), static_cast<int>(length));
+  QVERIFY(received.endsWith(QStringLiteral("deskflow-win-file-payload.txt")));
+  QFile roundTrip(received);
+  QVERIFY(roundTrip.open(QIODevice::ReadOnly));
+  QCOMPARE(roundTrip.readAll(), content);
+  GlobalFree(result);
 }
 
 QTEST_MAIN(MSWindowsClipboardTests)

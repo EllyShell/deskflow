@@ -458,6 +458,8 @@ private:
   // switch latency instrumentation (M0 observability)
   double m_switchEnterMs = 0.0;
   bool m_switchPending = false;
+  //! time of the last computer switch, used to debounce edge switching
+  double m_lastSwitchMs = 0.0;
 
   // relative mouse move option
   bool m_relativeMoves = false;

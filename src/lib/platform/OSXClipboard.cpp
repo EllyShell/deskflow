@@ -11,6 +11,7 @@
 #include "base/Log.h"
 #include "platform/OSXClipboardBMPConverter.h"
 #include "platform/OSXClipboardFileImageConverter.h"
+#include "platform/OSXClipboardFileConverter.h"
 #include "platform/OSXClipboardHTMLConverter.h"
 #include "platform/OSXClipboardImageConverter.h"
 #include "platform/OSXClipboardTextConverter.h"
@@ -31,6 +32,7 @@ OSXClipboard::OSXClipboard() : m_time(0), m_pboard(nullptr)
   m_converters.push_back(new OSXClipboardBMPConverter);
   // screenshot utilities publish a file url instead of image data
   m_converters.push_back(new OSXClipboardFileImageConverter);
+  m_converters.push_back(new OSXClipboardFileConverter);
   m_converters.push_back(new OSXClipboardUTF8Converter);
   m_converters.push_back(new OSXClipboardUTF16Converter);
   m_converters.push_back(new OSXClipboardTextConverter);

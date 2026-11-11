@@ -25,10 +25,8 @@
 #include "server/ClientProxyUnknown.h"
 #include "server/PrimaryClient.h"
 
-#ifdef _WIN32
 #include <algorithm>
 #include <array>
-#endif
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -43,6 +41,15 @@ double switchNowMs()
 {
   return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
+
+//! ignore edge switches for a moment after a switch
+/*!
+Crossing an edge warps the pointer and the next motion event arrives before
+the cursor has settled, which made the server bounce straight back to the
+computer it just left. A short cooldown keeps the switch stable without adding
+perceptible latency.
+*/
+constexpr double kSwitchCooldownMs = 120.0;
 } // namespace
 
 //
@@ -496,6 +503,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
 
     // cut over
     m_active = dst;
+    m_lastSwitchMs = switchNowMs();
 
     // increment enter sequence number
     ++m_seqNum;
@@ -1713,6 +1721,14 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
     return false;
   }
 
+  // right after a switch the pointer is still settling from the warp, so an
+  // edge event here would bounce straight back to the computer we left
+  if (switchNowMs() - m_lastSwitchMs < kSwitchCooldownMs) {
+    LOG_VERBOSE("ignoring edge switch during cooldown");
+    noSwitch(x, y);
+    return false;
+  }
+
   // check both horizontally and vertically
   std::array<Direction, 2> dirs = {dirh, dirv};
   std::array<int32_t, 2> xs = {xh, x};
@@ -1801,6 +1817,13 @@ void Server::onMouseMoveSecondary(int32_t dx, int32_t dy)
   int32_t aw;
   int32_t ah;
   m_active->getShape(ax, ay, aw, ah);
+
+  // keep the accumulator inside the computer while the pointer settles after a
+  // switch, otherwise the first motion event bounces us back
+  if (switchNowMs() - m_lastSwitchMs < kSwitchCooldownMs) {
+    m_x = std::min(std::max(m_x, ax), ax + aw - 1);
+    m_y = std::min(std::max(m_y, ay), ay + ah - 1);
+  }
 
   // find direction of neighbor and get the neighbor
   bool jump = true;
