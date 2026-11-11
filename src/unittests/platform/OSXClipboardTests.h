@@ -21,6 +21,7 @@ private Q_SLOTS:
   void readTiffOnly();
   void fileUrlImage();
   void filePayload();
+  void emptyFilePayload();
 
 private:
   Log m_log;

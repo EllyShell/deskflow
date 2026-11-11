@@ -10,6 +10,7 @@
 
 #include "platform/MSWindowsClipboard.h"
 #include "platform/MSWindowsClipboardBitmapConverter.h"
+#include "common/ClipboardFile.h"
 #include "deskflow/Clipboard.h"
 #include "platform/MSWindowsClipboardFileConverter.h"
 #include "platform/MSWindowsClipboardPNGConverter.h"
@@ -18,6 +19,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 
 #include <shellapi.h>
 #include <shlobj.h>
@@ -34,6 +36,7 @@ void MSWindowsClipboardTests::initTestCase()
 
   QVERIFY(clipboard.open(0));
   QVERIFY(clipboard.empty());
+  clipboard.close();
 }
 
 void MSWindowsClipboardTests::cleanupTestCase()
@@ -332,6 +335,8 @@ void MSWindowsClipboardTests::filePayloadRoundTrip()
 
   const QString received = QString::fromWCharArray(buffer.data(), static_cast<int>(length));
   QVERIFY(received.contains(QStringLiteral("deskflow-win-file-payload")));
+  const QString tempDirectory = QDir::temp().filePath(QStringLiteral("DeskflowClipboard"));
+  QVERIFY(QDir::cleanPath(received).startsWith(QDir::cleanPath(tempDirectory) + QLatin1Char('/'), Qt::CaseInsensitive));
   QFile roundTrip(received);
   QVERIFY(roundTrip.open(QIODevice::ReadOnly));
   QCOMPARE(roundTrip.readAll(), content);
@@ -365,7 +370,13 @@ void MSWindowsClipboardTests::copySystemClipboardFile()
     GlobalUnlock(dropHandle);
   }
 
-  QVERIFY(OpenClipboard(nullptr));
+  // A real Explorer copy has a clipboard owner. OpenClipboard(nullptr) can
+  // leave CF_HDROP advertised without retaining its data after CloseClipboard.
+  HWND owner = CreateWindowExW(
+      0, L"STATIC", L"DeskflowClipboardTest", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, GetModuleHandleW(nullptr), nullptr
+  );
+  QVERIFY(owner != nullptr);
+  QVERIFY(OpenClipboard(owner));
   EmptyClipboard();
   QVERIFY(SetClipboardData(CF_HDROP, dropHandle) != nullptr);
   CloseClipboard();
@@ -375,9 +386,27 @@ void MSWindowsClipboardTests::copySystemClipboardFile()
   MSWindowsClipboard source(nullptr);
   QVERIFY2(source.open(0), "OpenClipboard failed");
   QVERIFY2(source.has(IClipboard::Format::File), "converter says no file format");
+  const HANDLE clipboardDrop = GetClipboardData(CF_HDROP);
+  QVERIFY2(clipboardDrop != nullptr, "CF_HDROP handle was lost");
+  QCOMPARE(DragQueryFileW(static_cast<HDROP>(clipboardDrop), 0xFFFFFFFF, nullptr, 0), static_cast<UINT>(1));
   const std::string payload = source.get(IClipboard::Format::File);
   source.close();
+  DestroyWindow(owner);
   QVERIFY2(!payload.empty(), "file converter produced an empty payload");
+}
+
+void MSWindowsClipboardTests::emptyFilePayloadRoundTrip()
+{
+  const QString path = QDir::temp().filePath(QStringLiteral("deskflow-empty-file-payload.txt"));
+  QFile source(path);
+  QVERIFY(source.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  source.close();
+
+  std::string payload;
+  QVERIFY(deskflow::files::readFilePayload(path, payload));
+  QString received;
+  QVERIFY(deskflow::files::writeFilePayload(payload, received));
+  QCOMPARE(QFileInfo(received).size(), 0);
 }
 
 QTEST_MAIN(MSWindowsClipboardTests)

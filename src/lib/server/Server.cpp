@@ -522,8 +522,11 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
     if (m_enableClipboard) {
       // send the clipboard data to new active computer
       for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
-        // Hackity hackity hack
-        if (m_clipboards[id].m_clipboard.marshall().size() > (m_maximumClipboardSize * 1024)) {
+        const size_t size = m_clipboards[id].m_clipboard.marshall().size();
+        // A grab clears the cached data until the source sends its contents.
+        // Publishing that temporary empty state destroys the source clipboard
+        // during a switch and can trigger another grab on the destination.
+        if (size <= 4 || size > m_maximumClipboardSize * 1024) {
           continue;
         }
         m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
@@ -1495,6 +1498,15 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   sender->getClipboard(id, &clipboard.m_clipboard);
 
   std::string data = clipboard.m_clipboard.marshall();
+
+  // never let an empty clipboard from one computer wipe the clipboard of the
+  // active one: clients report "no formats" while they are being grabbed, and
+  // replaying that erased whatever the user had copied on the primary
+  if (data.size() <= 4) {
+    LOG_DEBUG("ignoring empty clipboard update from \"%s\"", getName(sender).c_str());
+    return;
+  }
+
   if (data.size() > m_maximumClipboardSize * 1024) {
     LOG_WARN(
         "not sending clipboard data, exceeds limit: %zu KB (size: %zu bytes)", m_maximumClipboardSize, data.size()

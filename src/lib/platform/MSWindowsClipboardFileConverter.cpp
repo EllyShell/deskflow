@@ -39,8 +39,10 @@ UINT MSWindowsClipboardFileConverter::getWin32Format() const
 
 HANDLE MSWindowsClipboardFileConverter::fromIClipboard(const std::string &payload) const
 {
+  LOG_DEBUG("clipboard: converting file payload %zu bytes", payload.size());
   QString path;
   if (!deskflow::files::writeFilePayload(payload, path)) {
+    LOG_DEBUG("clipboard: file payload could not be stored");
     return nullptr;
   }
 
@@ -51,6 +53,7 @@ HANDLE MSWindowsClipboardFileConverter::fromIClipboard(const std::string &payloa
   const size_t dataSize = (wide.size() + 2) * sizeof(wchar_t);
   HGLOBAL handle = GlobalAlloc(GMEM_MOVEABLE | GMEM_DDESHARE, headerSize + dataSize);
   if (handle == nullptr) {
+    LOG_DEBUG("clipboard: dropfiles allocation failed");
     return nullptr;
   }
 
@@ -76,18 +79,21 @@ HANDLE MSWindowsClipboardFileConverter::fromIClipboard(const std::string &payloa
 std::string MSWindowsClipboardFileConverter::toIClipboard(HANDLE data) const
 {
   if (DragQueryFileW(static_cast<HDROP>(data), 0xFFFFFFFF, nullptr, 0) == 0) {
+    LOG_DEBUG("clipboard: dropped reason=no-file-drop-paths");
     return std::string();
   }
 
   std::vector<wchar_t> buffer(kMaxPathLength);
   const UINT length = DragQueryFileW(static_cast<HDROP>(data), 0, buffer.data(), kMaxPathLength);
   if (length == 0) {
+    LOG_DEBUG("clipboard: dropped reason=invalid-file-drop-path");
     return std::string();
   }
 
   const QString path = QString::fromWCharArray(buffer.data(), static_cast<int>(length));
   if (deskflow::files::isImageFile(path)) {
     // the bitmap converter handles image files, do not send them twice
+    LOG_DEBUG("clipboard: skipped image file %s", qPrintable(QFileInfo(path).fileName()));
     return std::string();
   }
 

@@ -15,6 +15,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QUrl>
 #include <QtEndian>
 
@@ -280,6 +281,20 @@ void OSXClipboardTests::filePayload()
   QFile result(received);
   QVERIFY(result.open(QIODevice::ReadOnly));
   QCOMPARE(result.readAll(), content);
+}
+
+void OSXClipboardTests::emptyFilePayload()
+{
+  const QString path = QDir::temp().filePath(QStringLiteral("deskflow-empty-file-payload.txt"));
+  QFile source(path);
+  QVERIFY(source.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  source.close();
+
+  std::string payload;
+  QVERIFY(deskflow::files::readFilePayload(path, payload));
+  QString received;
+  QVERIFY(deskflow::files::writeFilePayload(payload, received));
+  QCOMPARE(QFileInfo(received).size(), 0);
 }
 
 QTEST_MAIN(OSXClipboardTests)

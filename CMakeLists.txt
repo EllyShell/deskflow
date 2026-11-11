@@ -98,6 +98,13 @@ project(
   LANGUAGES C CXX
 )
 
+# CMake 3.29 can misdecode MSVC's UTF-8 Chinese /showIncludes output as GBK.
+# Ninja then records zero header dependencies and may link objects compiled
+# against different Clipboard layouts after a header change.
+if(MSVC AND CMAKE_GENERATOR MATCHES "^Ninja" AND CMAKE_CL_SHOWINCLUDES_PREFIX MATCHES "^娉ㄦ剰:")
+  set(CMAKE_CL_SHOWINCLUDES_PREFIX "注意: 包含文件:  ")
+endif()
+
 # Define Additional "PROJECT" vars for packaging and metadata
 set(CMAKE_PROJECT_PROPER_NAME "Deskflow")
 set(CMAKE_PROJECT_VENDOR "${CMAKE_PROJECT_PROPER_NAME} Devs")

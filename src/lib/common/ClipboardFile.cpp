@@ -34,7 +34,7 @@ bool readFilePayload(const QString &path, std::string &payload)
   }
 
   const qint64 size = file.size();
-  if (size <= 0 || size > kMaxFileBytes) {
+  if (size < 0 || size > kMaxFileBytes) {
     LOG_INFO("clipboard: dropped reason=file-size file=%s bytes=%lld", qPrintable(QFileInfo(path).fileName()), size);
     return false;
   }

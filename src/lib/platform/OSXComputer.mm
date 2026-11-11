@@ -860,7 +860,13 @@ bool OSXComputer::setClipboard(ClipboardID, const IClipboard *src)
 {
   if (src != nullptr) {
     LOG_DEBUG("setting clipboard");
-    Clipboard::copy(&m_pasteboard, src);
+    if (!Clipboard::copy(&m_pasteboard, src)) {
+      return false;
+    }
+    // Deskflow's own PasteboardClear/PutItemFlavor calls advance changeCount.
+    // Record them so the poller does not report our write as a new local copy
+    // and immediately send a grab back to the source computer.
+    m_pasteboardChangeCount = static_cast<int64_t>([[NSPasteboard generalPasteboard] changeCount]);
   }
   return true;
 }

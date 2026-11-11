@@ -72,22 +72,10 @@ private:
   void outputLoop(const void *);
 
   /**
-   * @brief Duplicates the process token for the given process.
-   *
-   * Required for starting a process in the user session; when we start an elevated process
-   * to ensure that it has access to secure processes, such as the login screen, we duplicate
-   * the token of an existing process that has the necessary access such as `winlogon.exe`.
-   *
-   * @param process The process to duplicate the token from (typically `winlogon.exe`).
-   */
-  HANDLE duplicateProcessToken(HANDLE process, LPSECURITY_ATTRIBUTES security);
-
-  /**
    * @brief Get a security token for the user session.
    *
-   * Checks to see if logonui.exe is running or if the `elevatedToken` arg is true,
-   * which indicates either we're in a secure user session or we need an elevated token.
-   * If either case is true, it duplicates the token from `winlogon.exe`.
+   * Uses the logged-in user's linked elevated token when available, keeping
+   * the core in that user's clipboard context.
    */
   HANDLE getUserToken(LPSECURITY_ATTRIBUTES security, bool elevatedToken);
 

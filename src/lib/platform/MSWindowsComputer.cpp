@@ -72,6 +72,11 @@
 #define PBT_APMRESUMEAUTOMATIC 0x0012
 #endif
 
+namespace {
+constexpr UINT_PTR kClipboardUpdateTimer = 0x4446;
+constexpr UINT kClipboardUpdateDelayMs = 75;
+}
+
 //
 // MSWindowsComputer
 //
@@ -223,6 +228,7 @@ void MSWindowsComputer::disable()
   if (!RemoveClipboardFormatListener(m_window)) {
     LOG_WARN("failed to remove the clipboard format listener: %d", GetLastError());
   }
+  KillTimer(m_window, kClipboardUpdateTimer);
 
   // uninstall fix timer
   if (m_fixTimer != nullptr) {
@@ -323,7 +329,9 @@ bool MSWindowsComputer::setClipboard(ClipboardID, const IClipboard *src)
   MSWindowsClipboard dst(m_window);
   if (src != nullptr) {
     // save clipboard data
-    return Clipboard::copy(&dst, src);
+    const bool copied = Clipboard::copy(&dst, src);
+    LOG_DEBUG("clipboard: setClipboard copied=%d", static_cast<int>(copied));
+    return copied;
   } else {
     // assert clipboard ownership
     if (!dst.open(0)) {
@@ -942,9 +950,25 @@ bool MSWindowsComputer::onEvent(HWND, UINT msg, WPARAM wParam, LPARAM lParam, LR
 
     if (clipboardSequenceNumber && (clipboardSequenceNumber != m_clipboardSequenceNumber)) {
       m_clipboardSequenceNumber = clipboardSequenceNumber;
-      onClipboardChange();
+      // EmptyClipboard can notify us before the owner has published CF_HDROP.
+      // Coalesce updates and read after the clipboard has settled.
+      if (SetTimer(m_window, kClipboardUpdateTimer, kClipboardUpdateDelayMs, nullptr) == 0) {
+        LOG_WARN("failed to defer clipboard update: %d", GetLastError());
+        onClipboardChange();
+      }
     }
-    return 0; // message processed
+    return true;
+  }
+
+  case WM_TIMER: {
+    if (wParam == kClipboardUpdateTimer) {
+      KillTimer(m_window, kClipboardUpdateTimer);
+      if (m_isEnabled) {
+        onClipboardChange();
+      }
+      return true;
+    }
+    break;
   }
 
   case WM_DISPLAYCHANGE:

@@ -101,36 +101,6 @@ void MSWindowsWatchdog::stop()
 }
 
 HANDLE
-MSWindowsWatchdog::duplicateProcessToken(HANDLE process, LPSECURITY_ATTRIBUTES security)
-{
-  HANDLE sourceToken;
-
-  BOOL tokenRet = OpenProcessToken(process, TOKEN_ASSIGN_PRIMARY | TOKEN_ALL_ACCESS, &sourceToken);
-
-  if (!tokenRet) {
-    LOG_ERR("could not open token, process handle: %d", process);
-    throw std::runtime_error(windowsErrorToString(GetLastError()));
-  }
-
-  LOG_DEBUG("got token %i, duplicating", sourceToken);
-
-  HANDLE newToken;
-  BOOL duplicateRet = DuplicateTokenEx(
-      sourceToken, TOKEN_ASSIGN_PRIMARY | TOKEN_ALL_ACCESS, security, SecurityImpersonation, TokenPrimary, &newToken
-  );
-
-  if (!duplicateRet) {
-    CloseHandle(sourceToken);
-    LOG_ERR("could not duplicate token %i", sourceToken);
-    throw std::runtime_error(windowsErrorToString(GetLastError()));
-  }
-
-  CloseHandle(sourceToken);
-  LOG_DEBUG("duplicated, new token: %i", newToken);
-  return newToken;
-}
-
-HANDLE
 MSWindowsWatchdog::getUserToken(LPSECURITY_ATTRIBUTES security, bool elevatedToken)
 {
   m_session.updateActiveSession();
@@ -139,27 +109,27 @@ MSWindowsWatchdog::getUserToken(LPSECURITY_ATTRIBUTES security, bool elevatedTok
 
     LOG_DEBUG("getting elevated token");
 
-    HANDLE process;
-    if (!m_session.isProcessInSession(L"winlogon.exe", &process)) {
-      throw std::runtime_error("cannot get user token without winlogon.exe");
-    }
-    if (process == nullptr) {
-      throw std::runtime_error("found winlogon.exe but failed to open process handle");
+    // Keep the core in the interactive user's logon context. A token copied
+    // from winlogon.exe runs it as SYSTEM; that process can publish clipboard
+    // files but cannot see CF_HDROP copied by Explorer in the user context.
+    HANDLE userToken = m_session.getUserToken(security);
+    TOKEN_ELEVATION elevation = {};
+    DWORD returned = 0;
+    if (GetTokenInformation(userToken, TokenElevation, &elevation, sizeof(elevation), &returned) &&
+        elevation.TokenIsElevated) {
+      LOG_DEBUG("using the active user's elevated token");
+      return userToken;
     }
 
-    try {
-      HANDLE token = duplicateProcessToken(process, security);
-      if (process != nullptr) {
-        CloseHandle(process);
-      }
-      return token;
-    } catch (...) {
-      LOG_ERR("failed to duplicate user token from winlogon.exe");
-      if (process != nullptr) {
-        CloseHandle(process);
-      }
-      throw;
+    TOKEN_LINKED_TOKEN linked = {};
+    if (GetTokenInformation(userToken, TokenLinkedToken, &linked, sizeof(linked), &returned)) {
+      CloseHandle(userToken);
+      LOG_DEBUG("using the active user's linked elevated token");
+      return linked.LinkedToken;
     }
+    LOG_WARN("active user has no linked elevated token; falling back to the session token");
+    return userToken;
+
   } else {
     LOG_DEBUG("getting non-elevated token");
     return m_session.getUserToken(security);

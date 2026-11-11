@@ -230,4 +230,23 @@ void ClipboardTests::equalClipboards()
   clipboard2.close();
 }
 
+void ClipboardTests::fileFormatRoundTrip()
+{
+  std::string payload(128, 'x');
+  payload[17] = '\0';
+  Clipboard source;
+  QVERIFY(source.open(0));
+  source.add(IClipboard::Format::File, payload);
+  source.close();
+
+  Clipboard copied;
+  QVERIFY(Clipboard::copy(&copied, &source));
+  Clipboard received;
+  received.unmarshall(copied.marshall(), 0);
+  QVERIFY(received.open(0));
+  QVERIFY(received.has(IClipboard::Format::File));
+  QCOMPARE(received.get(IClipboard::Format::File), payload);
+  received.close();
+}
+
 QTEST_MAIN(ClipboardTests)
