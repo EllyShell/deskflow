@@ -20,6 +20,7 @@ private Q_SLOTS:
   void fakePollShift();
   void fakePollChar();
   void fakePollCharWithModifier();
+  void pollActiveGroupFromWorkerThread();
 
 private:
   bool isKeyPressed(const OSXKeyState &keyState, KeyButton button);

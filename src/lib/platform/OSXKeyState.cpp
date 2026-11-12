@@ -13,6 +13,8 @@
 
 #include <Carbon/Carbon.h>
 #include <IOKit/hidsystem/IOHIDLib.h>
+#include <dispatch/dispatch.h>
+#include <pthread.h>
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
@@ -472,16 +474,33 @@ KeyModifierMask OSXKeyState::pollActiveModifiers() const
 
 int32_t OSXKeyState::pollActiveGroup() const
 {
-  AutoTISInputSourceRef keyboardLayout(nullptr, CFRelease);
   CFDataRef id = nullptr;
-  {
+  auto readInputSource = [](void *context) {
+    auto *inputSourceID = static_cast<CFDataRef *>(context);
     std::lock_guard<std::mutex> lock(g_tisMutex);
-    keyboardLayout = AutoTISInputSourceRef(TISCopyCurrentKeyboardLayoutInputSource(), CFRelease);
-    if (keyboardLayout)
-      id = (CFDataRef)TISGetInputSourceProperty(keyboardLayout.get(), kTISPropertyInputSourceID);
+    AutoTISInputSourceRef keyboardLayout(TISCopyCurrentKeyboardLayoutInputSource(), CFRelease);
+    if (keyboardLayout) {
+      *inputSourceID =
+          static_cast<CFDataRef>(TISGetInputSourceProperty(keyboardLayout.get(), kTISPropertyInputSourceID));
+      if (*inputSourceID != nullptr) {
+        CFRetain(*inputSourceID);
+      }
+    }
+  };
+
+  // HIToolbox asserts when this input-source query runs on the server's
+  // QThread (seen during a Mac-to-client switch on macOS 26). Do the query on
+  // the main queue, then look up the retained ID on the calling thread.
+  if (pthread_main_np() != 0) {
+    readInputSource(&id);
+  } else {
+    dispatch_sync_f(dispatch_get_main_queue(), &id, readInputSource);
   }
 
   GroupMap::const_iterator i = m_groupMap.find(id);
+  if (id != nullptr) {
+    CFRelease(id);
+  }
   if (i != m_groupMap.end()) {
     return i->second;
   }

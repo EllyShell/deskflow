@@ -10,6 +10,28 @@
 
 #include "base/EventQueue.h"
 
+#include <QThread>
+
+#include <CoreFoundation/CoreFoundation.h>
+
+namespace {
+
+class ActiveGroupPollThread : public QThread
+{
+public:
+  explicit ActiveGroupPollThread(const OSXKeyState &keyState) : m_keyState(keyState) { }
+
+  int32_t result() const { return m_result; }
+
+private:
+  void run() override { m_result = m_keyState.pollActiveGroup(); }
+
+  const OSXKeyState &m_keyState;
+  int32_t m_result = -1;
+};
+
+} // namespace
+
 #define SHIFT_ID_L kKeyShift_L
 #define SHIFT_ID_R kKeyShift_R
 #define SHIFT_BUTTON 57
@@ -111,6 +133,28 @@ void OSXKeyStateTests::fakePollCharWithModifier()
   // we should really set focus to an invisible window.
   keyState.fakeKeyDown(kKeyBackSpace, 0, 2, "en");
   keyState.fakeKeyUp(2);
+}
+
+void OSXKeyStateTests::pollActiveGroupFromWorkerThread()
+{
+  m_log.setFilter(LogLevel::Level::Error);
+  deskflow::KeyMap keyMap;
+  EventQueue eventQueue;
+  OSXKeyState keyState(&eventQueue, keyMap, {"en"}, true);
+  keyState.updateKeyMap();
+
+  ActiveGroupPollThread worker(keyState);
+  worker.start();
+  const CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 5.0;
+  while (!worker.isFinished() && CFAbsoluteTimeGetCurrent() < deadline) {
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, false);
+  }
+  if (!worker.isFinished()) {
+    qFatal("input-source query did not return from the main queue");
+  }
+
+  worker.wait();
+  QVERIFY(worker.result() >= 0);
 }
 
 bool OSXKeyStateTests::isKeyPressed(const OSXKeyState &keyState, KeyButton button)
