@@ -287,6 +287,11 @@ private:
   // stop delay switch timer
   void stopSwitchWait();
 
+  // sync clipboard after the pointer handoff has entered the new computer
+  void scheduleClipboardSync(bool refreshPrimary);
+  void stopClipboardSync();
+  void handleClipboardSyncTimeout();
+
   // returns true iff the delay switch timer is started
   bool isSwitchWaitStarted() const;
 
@@ -445,6 +450,9 @@ private:
   // state for delayed computer switching
   int32_t m_switchWaitX;
   int32_t m_switchWaitY;
+  EventQueueTimer *m_clipboardSyncTimer = nullptr;
+  uint32_t m_clipboardSyncSequence = 0;
+  bool m_refreshPrimaryClipboard = false;
 
   int32_t m_switchTwoTapZone = 3;
 

@@ -234,11 +234,19 @@ void *OSXComputer::getEventTarget() const
 
 bool OSXComputer::getClipboard(ClipboardID, IClipboard *dst) const
 {
-  // the carbon reference only sees items written by other processes after a
-  // synchronize, and a switch can trigger a read before the poll timer runs
-  m_pasteboard.synchronize();
-  Clipboard::copy(dst, &m_pasteboard);
-  return true;
+  const auto before = static_cast<int64_t>([[NSPasteboard generalPasteboard] changeCount]);
+  if (before != m_cachedPasteboardChangeCount) {
+    // Carbon sees external writes only after synchronization. Decode expensive
+    // image formats once per pasteboard version, even when both clipboard IDs
+    // are queried again during a computer switch.
+    m_pasteboard.synchronize();
+    if (!Clipboard::copy(&m_cachedClipboard, &m_pasteboard)) {
+      return false;
+    }
+    const auto after = static_cast<int64_t>([[NSPasteboard generalPasteboard] changeCount]);
+    m_cachedPasteboardChangeCount = after == before ? before : -1;
+  }
+  return Clipboard::copy(dst, &m_cachedClipboard);
 }
 
 void OSXComputer::getShape(int32_t &x, int32_t &y, int32_t &w, int32_t &h) const

@@ -102,6 +102,13 @@ public:
   */
   virtual uint32_t getSize() const = 0;
 
+  //! Bytes buffered for output before newly written data can reach the peer.
+  //! Streams that cannot report this may return zero.
+  virtual uint32_t getPendingOutputSize() const
+  {
+    return 0;
+  }
+
   //@}
 };
 

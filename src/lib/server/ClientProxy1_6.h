@@ -9,10 +9,12 @@
 #include "deskflow/ClipboardChunk.h"
 #include "server/ClientProxy1_5.h"
 
+#include <deque>
 #include <string>
 
 class Server;
 class IEventQueue;
+class EventQueueTimer;
 
 //! Proxy for client implementing protocol version 1.6
 class ClientProxy1_6 : public ClientProxy1_5
@@ -25,7 +27,21 @@ public:
   bool recvClipboard() override;
 
 private:
+  struct PendingClipboardSend
+  {
+    ClipboardID id;
+    uint32_t sequence;
+    std::string data;
+    size_t offset = 0;
+    bool started = false;
+  };
+
+  void scheduleClipboardChunk(double delay);
+  void sendNextClipboardChunk();
+
   IEventQueue *m_events;
+  EventQueueTimer *m_clipboardSendTimer = nullptr;
+  std::deque<PendingClipboardSend> m_pendingClipboardSends;
   std::string m_clipboardDataCached;
   ClipboardChunkAssemblyState m_clipboardChunkState;
 };

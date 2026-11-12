@@ -9,6 +9,7 @@
 #pragma once
 
 #include "deskflow/PlatformComputer.h"
+#include "deskflow/Clipboard.h"
 #include "platform/OSXClipboard.h"
 #include "platform/OSXPowerManager.h"
 
@@ -257,6 +258,8 @@ private:
 
   // clipboards
   mutable OSXClipboard m_pasteboard;
+  mutable Clipboard m_cachedClipboard;
+  mutable int64_t m_cachedPasteboardChangeCount = -1;
   uint32_t m_sequenceNumber;
   //! NSPasteboard changeCount of the last observed clipboard state
   /*!

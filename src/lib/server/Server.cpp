@@ -50,6 +50,7 @@ computer it just left. A short cooldown keeps the switch stable without adding
 perceptible latency.
 */
 constexpr double kSwitchCooldownMs = 120.0;
+constexpr double kClipboardSyncDelaySeconds = 0.03;
 } // namespace
 
 //
@@ -184,6 +185,7 @@ Server::~Server()
   m_events->removeHandler(PrimaryComputerFakeInputEnd, m_inputFilter);
   m_events->removeHandler(Timer, this);
   stopSwitch();
+  stopClipboardSync();
 
   try {
     // force immediate disconnection of secondary clients
@@ -478,16 +480,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
     }
     const double leaveDoneMs = switchNowMs();
 
-    // update the primary client's clipboards if we're leaving the
-    // primary computer.
-    if (m_active == m_primaryClient && m_enableClipboard) {
-      for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
-        const ClipboardInfo &clipboard = m_clipboards[id];
-        if (clipboard.m_clipboardOwner == getName(m_primaryClient)) {
-          onClipboardChanged(m_primaryClient, id, clipboard.m_clipboardSeqNum);
-        }
-      }
-    }
+    const bool refreshPrimaryClipboard = m_active == m_primaryClient;
 
 #if defined(__APPLE__)
     if (dst != m_primaryClient) {
@@ -520,17 +513,7 @@ void Server::switchComputer(BaseClientProxy *dst, int32_t x, int32_t y, bool for
     );
 
     if (m_enableClipboard) {
-      // send the clipboard data to new active computer
-      for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
-        const size_t size = m_clipboards[id].m_clipboard.marshall().size();
-        // A grab clears the cached data until the source sends its contents.
-        // Publishing that temporary empty state destroys the source clipboard
-        // during a switch and can trigger another grab on the destination.
-        if (size <= 4 || size > m_maximumClipboardSize * 1024) {
-          continue;
-        }
-        m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
-      }
+      scheduleClipboardSync(refreshPrimaryClipboard);
     }
 
     auto *info = new Server::SwitchToComputerInfo(m_active->getName());
@@ -1000,6 +983,51 @@ void Server::stopSwitchWait()
   }
 }
 
+void Server::scheduleClipboardSync(bool refreshPrimary)
+{
+  stopClipboardSync();
+  m_clipboardSyncSequence = m_seqNum;
+  m_refreshPrimaryClipboard = refreshPrimary;
+  m_clipboardSyncTimer = m_events->newOneShotTimer(kClipboardSyncDelaySeconds, nullptr);
+  m_events->addHandler(EventTypes::Timer, m_clipboardSyncTimer, [this](const auto &) { handleClipboardSyncTimeout(); });
+}
+
+void Server::stopClipboardSync()
+{
+  if (m_clipboardSyncTimer != nullptr) {
+    m_events->removeHandler(EventTypes::Timer, m_clipboardSyncTimer);
+    m_events->deleteTimer(m_clipboardSyncTimer);
+    m_clipboardSyncTimer = nullptr;
+  }
+}
+
+void Server::handleClipboardSyncTimeout()
+{
+  stopClipboardSync();
+  if (!m_enableClipboard || m_active == nullptr || m_clipboardSyncSequence != m_seqNum) {
+    return;
+  }
+
+  if (m_refreshPrimaryClipboard && m_active != m_primaryClient) {
+    for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
+      const ClipboardInfo &clipboard = m_clipboards[id];
+      if (clipboard.m_clipboardOwner == getName(m_primaryClient)) {
+        onClipboardChanged(m_primaryClient, id, clipboard.m_clipboardSeqNum);
+      }
+    }
+  }
+
+  for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
+    const size_t size = m_clipboards[id].m_clipboard.marshall().size();
+    // A grab clears the cached data until the source sends its contents.
+    // Publishing that temporary empty state destroys the source clipboard
+    // during a switch and can trigger another grab on the destination.
+    if (size > 4 && size <= m_maximumClipboardSize * 1024) {
+      m_active->setClipboard(id, &m_clipboards[id].m_clipboard);
+    }
+  }
+}
+
 bool Server::isSwitchWaitStarted() const
 {
   return (m_switchWaitTimer != nullptr);
@@ -1232,6 +1260,16 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
   );
   clipboard.m_clipboardOwner = getName(grabber);
   clipboard.m_clipboardSeqNum = info->m_sequenceNumber;
+
+#if defined(__APPLE__)
+  // The macOS primary clipboard can be read immediately. Compare its content
+  // before telling clients to discard theirs: clipboard managers often publish
+  // the same image again with a new changeCount.
+  if (grabber == m_primaryClient) {
+    onClipboardChanged(grabber, info->m_id, info->m_sequenceNumber);
+    return;
+  }
+#endif
 
   // clear the clipboard data (since it's not known at this point)
   if (clipboard.m_clipboard.open(0)) {
@@ -1531,7 +1569,9 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   }
 
   // send the new clipboard to the active computer
-  m_active->setClipboard(id, &clipboard.m_clipboard);
+  if (m_active != sender) {
+    m_active->setClipboard(id, &clipboard.m_clipboard);
+  }
 }
 
 void Server::onScreensaver(bool activated)
@@ -2107,6 +2147,7 @@ void Server::removeOldClient(BaseClientProxy *client)
 void Server::forceLeaveClient(const BaseClientProxy *client)
 {
   if (const auto *active = (m_activeSaver != nullptr) ? m_activeSaver : m_active; active == client) {
+    stopClipboardSync();
     // record new position (center of primary computer)
     m_primaryClient->getCursorCenter(m_x, m_y);
 
