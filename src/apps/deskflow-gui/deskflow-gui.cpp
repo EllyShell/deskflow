@@ -141,7 +141,12 @@ int main(int argc, char *argv[])
   }
 
   if (!checkMacAssistiveDevices()) {
-    return 1;
+    QMessageBox::information(
+        nullptr, kAppName,
+        QObject::tr("Deskflow needs Accessibility permission to control the keyboard and mouse. "
+                    "Enable Deskflow in System Settings > Privacy & Security > Accessibility, "
+                    "then start the core.")
+    );
   }
 #endif
 
