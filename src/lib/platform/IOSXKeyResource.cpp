@@ -104,11 +104,15 @@ KeyID IOSXKeyResource::getKeyID(uint8_t c)
     // get current keyboard script
     AutoTISInputSourceRef isref(nullptr, CFRelease);
     CFArrayRef langs = nullptr;
-    {
+    deskflow::macos::runTISOnMainQueue([&] {
       std::lock_guard<std::mutex> lock(g_tisMutex);
       isref = AutoTISInputSourceRef(TISCopyCurrentKeyboardInputSource(), CFRelease);
-      if (isref)
+      if (isref) {
         langs = (CFArrayRef)TISGetInputSourceProperty(isref.get(), kTISPropertyInputSourceLanguages);
+      }
+    });
+    if (langs == nullptr || CFArrayGetCount(langs) == 0) {
+      return kKeyNone;
     }
     CFStringEncoding encoding = CFStringConvertIANACharSetNameToEncoding((CFStringRef)CFArrayGetValueAtIndex(langs, 0));
     // convert to unicode

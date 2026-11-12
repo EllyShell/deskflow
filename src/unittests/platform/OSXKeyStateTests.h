@@ -21,6 +21,8 @@ private Q_SLOTS:
   void fakePollChar();
   void fakePollCharWithModifier();
   void pollActiveGroupFromWorkerThread();
+  void mapKeyFromEventFromWorkerThread();
+  void updateKeyMapFromWorkerThread();
 
 private:
   bool isKeyPressed(const OSXKeyState &keyState, KeyButton button);

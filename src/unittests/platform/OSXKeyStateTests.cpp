@@ -24,11 +24,75 @@ public:
   int32_t result() const { return m_result; }
 
 private:
-  void run() override { m_result = m_keyState.pollActiveGroup(); }
+  void run() override
+  {
+    for (int i = 0; i < 100; ++i) {
+      m_result = m_keyState.pollActiveGroup();
+    }
+  }
 
   const OSXKeyState &m_keyState;
   int32_t m_result = -1;
 };
+
+class KeyEventMapThread : public QThread
+{
+public:
+  explicit KeyEventMapThread(const OSXKeyState &keyState) : m_keyState(keyState) { }
+
+  bool eventCreated() const { return m_eventCreated; }
+  KeyButton result() const { return m_result; }
+
+private:
+  void run() override
+  {
+    CGEventRef event = CGEventCreateKeyboardEvent(nullptr, kVK_ANSI_A, true);
+    if (event == nullptr) {
+      return;
+    }
+    m_eventCreated = true;
+    KeyModifierMask mask = 0;
+    OSXKeyState::KeyIDs ids;
+    for (int i = 0; i < 100; ++i) {
+      ids.clear();
+      m_result = m_keyState.mapKeyFromEvent(ids, &mask, event);
+    }
+    CFRelease(event);
+  }
+
+  const OSXKeyState &m_keyState;
+  bool m_eventCreated = false;
+  KeyButton m_result = kKeyNone;
+};
+
+class KeyMapUpdateThread : public QThread
+{
+public:
+  explicit KeyMapUpdateThread(OSXKeyState &keyState) : m_keyState(keyState) { }
+
+private:
+  void run() override
+  {
+    for (int i = 0; i < 5; ++i) {
+      m_keyState.updateKeyMap();
+    }
+  }
+
+  OSXKeyState &m_keyState;
+};
+
+void runWorkerAndPumpMainQueue(QThread &worker)
+{
+  worker.start();
+  const CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 5.0;
+  while (!worker.isFinished() && CFAbsoluteTimeGetCurrent() < deadline) {
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, false);
+  }
+  if (!worker.isFinished()) {
+    qFatal("input-source operation did not return from the main queue");
+  }
+  worker.wait();
+}
 
 } // namespace
 
@@ -144,17 +208,33 @@ void OSXKeyStateTests::pollActiveGroupFromWorkerThread()
   keyState.updateKeyMap();
 
   ActiveGroupPollThread worker(keyState);
-  worker.start();
-  const CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 5.0;
-  while (!worker.isFinished() && CFAbsoluteTimeGetCurrent() < deadline) {
-    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, false);
-  }
-  if (!worker.isFinished()) {
-    qFatal("input-source query did not return from the main queue");
-  }
-
-  worker.wait();
+  runWorkerAndPumpMainQueue(worker);
   QVERIFY(worker.result() >= 0);
+}
+
+void OSXKeyStateTests::mapKeyFromEventFromWorkerThread()
+{
+  m_log.setFilter(LogLevel::Level::Error);
+  deskflow::KeyMap keyMap;
+  EventQueue eventQueue;
+  OSXKeyState keyState(&eventQueue, keyMap, {"en"}, true);
+  keyState.updateKeyMap();
+
+  KeyEventMapThread worker(keyState);
+  runWorkerAndPumpMainQueue(worker);
+  QVERIFY(worker.eventCreated());
+  QVERIFY(worker.result() != kKeyNone);
+}
+
+void OSXKeyStateTests::updateKeyMapFromWorkerThread()
+{
+  m_log.setFilter(LogLevel::Level::Error);
+  deskflow::KeyMap keyMap;
+  EventQueue eventQueue;
+  OSXKeyState keyState(&eventQueue, keyMap, {"en"}, true);
+
+  KeyMapUpdateThread worker(keyState);
+  runWorkerAndPumpMainQueue(worker);
 }
 
 bool OSXKeyStateTests::isKeyPressed(const OSXKeyState &keyState, KeyButton button)
