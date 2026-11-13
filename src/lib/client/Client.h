@@ -244,4 +244,8 @@ private:
   int32_t m_relativeRestoreY = 0;
   size_t m_maximumClipboardSize = INT_MAX;
   size_t m_resolvedAddressesCount = 0;
+  double m_enterDeskMs = 0.0;
+  double m_enterWarpMs = 0.0;
+  double m_enterFirstMoveStart = 0.0;
+  bool m_enterFirstMovePending = false;
 };

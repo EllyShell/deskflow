@@ -224,12 +224,25 @@ void Client::enter(int32_t xAbs, int32_t yAbs, uint32_t, KeyModifierMask mask, b
     yAbs = m_relativeRestoreY;
     LOG_VERBOSE("using relative restore position: %d,%d", xAbs, yAbs);
   }
+  // The initial warp is only queueing a move for the platform thread; enter
+  // waits for the platform (Windows desk) to finish, so keep both timings
+  // separate to see which part blocks the pointer.
+  const double warpStarted = Arch::time();
   m_computer->mouseMove(xAbs, yAbs);
+  m_enterWarpMs = (Arch::time() - warpStarted) * 1000.0;
+
+  const double deskStarted = Arch::time();
   m_computer->enter(mask);
+  m_enterDeskMs = (Arch::time() - deskStarted) * 1000.0;
+
+  m_enterFirstMoveStart = Arch::time();
+  m_enterFirstMovePending = true;
+  LOG_DEBUG("client enter: desk=%.1fms warp=%.1fms first_frame=pending", m_enterDeskMs, m_enterWarpMs);
 }
 
 bool Client::leave()
 {
+  m_enterFirstMovePending = false;
   if (m_relativeMouseMoves) {
     saveRelativeRestorePosition();
   }
@@ -303,6 +316,13 @@ void Client::mouseUp(ButtonID id)
 
 void Client::mouseMove(int32_t x, int32_t y)
 {
+  if (m_enterFirstMovePending) {
+    m_enterFirstMovePending = false;
+    LOG_DEBUG(
+        "client enter: desk=%.1fms warp=%.1fms first_frame=%.1fms", m_enterDeskMs, m_enterWarpMs,
+        (Arch::time() - m_enterFirstMoveStart) * 1000.0
+    );
+  }
   m_computer->mouseMove(x, y);
 }
 
