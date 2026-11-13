@@ -630,13 +630,18 @@ void MSWindowsDesks::deskEnter(Desk *desk)
   // (mouse over activation) but i've no idea how to do that.
   // the obvious workaround of using SetWindowPos() to move it back
   // after being raised doesn't work.
-  DWORD thisThread = GetWindowThreadProcessId(desk->m_window, nullptr);
-  DWORD thatThread = GetWindowThreadProcessId(desk->m_foregroundWindow, nullptr);
-  AttachThreadInput(thatThread, thisThread, TRUE);
-  SetForegroundWindow(desk->m_foregroundWindow);
-  AttachThreadInput(thatThread, thisThread, FALSE);
+  // Only a primary using low-level hooks records a foreground window in
+  // deskLeave(). On a client (secondary) this is always null, so the
+  // AttachThreadInput/SetForegroundWindow block below is a no-op; skip it.
+  if (desk->m_foregroundWindow != nullptr) {
+    DWORD thisThread = GetWindowThreadProcessId(desk->m_window, nullptr);
+    DWORD thatThread = GetWindowThreadProcessId(desk->m_foregroundWindow, nullptr);
+    AttachThreadInput(thatThread, thisThread, TRUE);
+    SetForegroundWindow(desk->m_foregroundWindow);
+    AttachThreadInput(thatThread, thisThread, FALSE);
+    desk->m_foregroundWindow = nullptr;
+  }
   EnableWindow(desk->m_window, desk->m_lowLevel ? FALSE : TRUE);
-  desk->m_foregroundWindow = nullptr;
 }
 
 void MSWindowsDesks::deskLeave(Desk *desk, HKL keyLayout)
