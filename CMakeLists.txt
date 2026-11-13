@@ -179,6 +179,8 @@ add_definitions(-DQT_NO_KEYWORDS)
 
 #Find and setup Qt
 find_package(Qt6 ${REQUIRED_QT_VERSION} REQUIRED COMPONENTS Core Widgets Network)
+# svg is used for the bundled icon theme; optional so minimal Qt installs still build
+find_package(Qt6 ${REQUIRED_QT_VERSION} QUIET COMPONENTS Svg)
 if(UNIX AND NOT APPLE)
     find_package(Qt6 ${REQUIRED_QT_VERSION} REQUIRED COMPONENTS DBus)
 endif()

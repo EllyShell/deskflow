@@ -49,6 +49,13 @@ target_link_libraries(
   Qt6::Widgets
   Qt6::Network)
 
+# the bundled icon theme and the scalable UI assets are svg, so the svg module
+# has to be part of the deployment (macdeployqt/windeployqt copy it for us)
+if(TARGET Qt6::Svg)
+  # plain signature: the target_link_libraries call above uses the plain one too
+  target_link_libraries(${target} Qt6::Svg)
+endif()
+
 install(
   TARGETS ${target}
   RUNTIME_DEPENDENCY_SET guiDeps
