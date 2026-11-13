@@ -892,10 +892,10 @@ bool OSXKeyState::mapDeskflowHotKeyToMac(
     macModifierMask |= controlKey;
   }
   if ((mask & KeyModifierAlt) != 0) {
-    macModifierMask |= cmdKey;
+    macModifierMask |= optionKey;
   }
   if ((mask & KeyModifierSuper) != 0) {
-    macModifierMask |= optionKey;
+    macModifierMask |= cmdKey;
   }
   if ((mask & KeyModifierCapsLock) != 0) {
     macModifierMask |= alphaLock;

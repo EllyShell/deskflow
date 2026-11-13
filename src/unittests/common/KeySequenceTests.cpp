@@ -16,7 +16,12 @@ void KeySequenceTests::toString_controlShiftPlus_usesNamedPlus()
   sequence.appendKey(Qt::Key_Shift, Qt::ControlModifier | Qt::ShiftModifier);
   QVERIFY(sequence.appendKey(Qt::Key_Plus, Qt::ControlModifier | Qt::ShiftModifier));
 
+#if defined(Q_OS_MACOS)
+  // Qt maps the Command key to ControlModifier on macOS.
+  QCOMPARE(sequence.toString(), QStringLiteral("Super+Shift+Plus"));
+#else
   QCOMPARE(sequence.toString(), QStringLiteral("Control+Shift+Plus"));
+#endif
 }
 
 QTEST_MAIN(KeySequenceTests)

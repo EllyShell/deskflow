@@ -179,14 +179,25 @@ QString KeySequence::keyToString(int key)
   if (key & Qt::ShiftModifier)
     return "Shift";
 
+#if defined(Q_OS_MACOS)
+  // Qt reports Command as ControlModifier and the physical Control key as
+  // MetaModifier on macOS. Expose them with Deskflow's platform-neutral
+  // names so text configs and the core agree on the modifier.
+  if (key & Qt::ControlModifier)
+    return "Super";
+
+  if (key & Qt::MetaModifier)
+    return "Control";
+#else
   if (key & Qt::ControlModifier)
     return "Control";
 
-  if (key & Qt::AltModifier)
-    return "Alt";
-
   if (key & Qt::MetaModifier)
     return "Meta";
+#endif
+
+  if (key & Qt::AltModifier)
+    return "Alt";
 
   // treat key pad like normal keys (FIXME: we should have another lookup table
   // for keypad keys instead)
