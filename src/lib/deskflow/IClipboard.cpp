@@ -10,6 +10,7 @@
 #include "base/Log.h"
 
 #include <assert.h>
+#include <utility>
 #include <vector>
 
 //
@@ -23,51 +24,69 @@ void IClipboard::unmarshall(IClipboard *clipboard, const std::string_view &data,
   const char *index = data.data();
   const char *const end = index + data.size();
 
+  if (end - index < 4) {
+    LOG_ERR("clipboard unmarshall: truncated header");
+    return;
+  }
+  // read the number of formats
+  const uint32_t numFormats = readUInt32(index);
+  index += 4;
+
+  // Parse the whole payload before touching the destination. Clearing first and
+  // discovering afterwards that nothing usable arrived is what wiped the local
+  // clipboard: a peer sent one zero length format, we took ownership, and the
+  // user's data was gone.
+  std::vector<std::pair<IClipboard::Format, std::string>> items;
+  for (uint32_t i = 0; i < numFormats; ++i) {
+    // need 8 bytes for format id + payload size
+    if (end - index < 8) {
+      LOG_ERR("clipboard unmarshall: truncated format header at %u/%u", i, numFormats);
+      break;
+    }
+    // get the format id
+    const uint32_t formatID = readUInt32(index);
+    index += 4;
+
+    // get the size of the format data
+    const uint32_t size = readUInt32(index);
+    index += 4;
+
+    // peer-supplied size must not exceed remaining buffer
+    if (size > static_cast<uint32_t>(end - index)) {
+      LOG_ERR("clipboard unmarshall: payload size %u exceeds remaining %zd", size, end - index);
+      break;
+    }
+
+    // save the data if it's a known format.  if either the client
+    // or server supports more clipboard formats than the other
+    // then one of them will get a format >= TotalFormats here.
+    if (formatID >= static_cast<uint32_t>(IClipboard::Format::TotalFormats)) {
+      LOG_DEBUG("clipboard unmarshall: ignoring unknown format %u", formatID);
+    } else if (size == 0) {
+      // an empty payload carries no data; accepting it would let a peer hand us
+      // a format that owns the clipboard while holding nothing at all
+      LOG_DEBUG("clipboard unmarshall: ignoring empty format %u", formatID);
+    } else {
+      items.emplace_back(static_cast<IClipboard::Format>(formatID), std::string(index, size));
+    }
+    index += size;
+  }
+
+  if (items.empty()) {
+    LOG_DEBUG("clipboard unmarshall: no usable formats in %u, leaving clipboard untouched", numFormats);
+    return;
+  }
+
   if (clipboard->open(time)) {
     // clear existing data
     clipboard->empty();
 
-    if (end - index < 4) {
-      LOG_ERR("clipboard unmarshall: truncated header");
-      clipboard->close();
-      return;
-    }
-    // read the number of formats
-    const uint32_t numFormats = readUInt32(index);
-    index += 4;
-
-    // read each format
-    for (uint32_t i = 0; i < numFormats; ++i) {
-      // need 8 bytes for format id + payload size
-      if (end - index < 8) {
-        LOG_ERR("clipboard unmarshall: truncated format header at %u/%u", i, numFormats);
-        break;
-      }
-      // get the format id
-      auto format = static_cast<IClipboard::Format>(readUInt32(index));
-      index += 4;
-
-      // get the size of the format data
-      uint32_t size = readUInt32(index);
-      index += 4;
-
-      // peer-supplied size must not exceed remaining buffer
-      if (size > static_cast<uint32_t>(end - index)) {
-        LOG_ERR("clipboard unmarshall: payload size %u exceeds remaining %zd", size, end - index);
-        break;
-      }
-
-      // save the data if it's a known format.  if either the client
-      // or server supports more clipboard formats than the other
-      // then one of them will get a format >= TotalFormats here.
-      if (format < IClipboard::Format::TotalFormats) {
-        clipboard->add(format, std::string(index, size));
-      }
-      index += size;
+    for (const auto &[format, payload] : items) {
+      clipboard->add(format, payload);
     }
 
     // done
-    LOG_DEBUG("clipboard: unmarshalled formats=%u bytes=%zu", numFormats, data.size());
+    LOG_DEBUG("clipboard: unmarshalled formats=%u kept=%zu bytes=%zu", numFormats, items.size(), data.size());
     clipboard->close();
   }
 }
@@ -85,38 +104,43 @@ std::string IClipboard::marshall(const IClipboard *clipboard)
 
   std::string data;
   static const auto totalClipboardFormats = static_cast<int>(Format::TotalFormats);
-  std::vector<std::string> formatData;
-  formatData.resize(totalClipboardFormats);
+  // Only formats that actually carry bytes are marshalled. A format that
+  // reports has() but yields nothing would otherwise travel as "present but
+  // empty" and make the peer clear its pasteboard for no data at all.
+  std::vector<std::pair<uint32_t, std::string>> formats;
   // FIXME -- use current time
   if (clipboard->open(0)) {
 
     // compute size of marshalled data
     uint32_t size = 4;
-    uint32_t numFormats = 0;
-    for (uint32_t format = 0; format != totalClipboardFormats; ++format) {
-      if (clipboard->has(static_cast<IClipboard::Format>(format))) {
-        ++numFormats;
-        formatData[format] = clipboard->get(static_cast<IClipboard::Format>(format));
-        LOG_VERBOSE("clipboard: format=%u bytes=%zu", format, formatData[format].size());
-        size += 4 + 4 + (uint32_t)formatData[format].size();
+    for (int32_t format = 0; format != totalClipboardFormats; ++format) {
+      const auto eFormat = static_cast<IClipboard::Format>(format);
+      if (!clipboard->has(eFormat)) {
+        continue;
       }
+      auto payload = clipboard->get(eFormat);
+      if (payload.empty()) {
+        LOG_DEBUG("clipboard: skipping empty format=%d", format);
+        continue;
+      }
+      LOG_VERBOSE("clipboard: format=%d bytes=%zu", format, payload.size());
+      size += 4 + 4 + static_cast<uint32_t>(payload.size());
+      formats.emplace_back(static_cast<uint32_t>(format), std::move(payload));
     }
 
     // allocate space
     data.reserve(size);
 
     // marshall the data
-    writeUInt32(&data, numFormats);
-    for (uint32_t format = 0; format != totalClipboardFormats; ++format) {
-      if (clipboard->has(static_cast<IClipboard::Format>(format))) {
-        writeUInt32(&data, format);
-        writeUInt32(&data, (uint32_t)formatData[format].size());
-        data += formatData[format];
-      }
+    writeUInt32(&data, static_cast<uint32_t>(formats.size()));
+    for (const auto &[format, payload] : formats) {
+      writeUInt32(&data, format);
+      writeUInt32(&data, static_cast<uint32_t>(payload.size()));
+      data += payload;
     }
     clipboard->close();
 
-    LOG_DEBUG("clipboard: marshalled formats=%u bytes=%u", numFormats, size);
+    LOG_DEBUG("clipboard: marshalled formats=%u bytes=%u", static_cast<uint32_t>(formats.size()), size);
   }
 
   return data;
@@ -135,15 +159,31 @@ bool IClipboard::copy(IClipboard *dst, const IClipboard *src, Time time)
   assert(dst != nullptr);
   assert(src != nullptr);
 
+  static const auto totalClipboardFormats = static_cast<int>(Format::TotalFormats);
   bool success = false;
   if (src->open(time)) {
-    if (dst->open(time)) {
+    // Gather first, write second: emptying the destination before knowing that
+    // there is anything to put back is how the local clipboard got lost.
+    std::vector<std::pair<Format, std::string>> items;
+    for (int32_t format = 0; format != totalClipboardFormats; ++format) {
+      const auto eFormat = static_cast<IClipboard::Format>(format);
+      if (!src->has(eFormat)) {
+        continue;
+      }
+      auto payload = src->get(eFormat);
+      if (payload.empty()) {
+        LOG_DEBUG("clipboard: copy skipping empty format=%d", format);
+        continue;
+      }
+      items.emplace_back(eFormat, std::move(payload));
+    }
+
+    if (items.empty()) {
+      LOG_DEBUG("clipboard: copy skipped, source holds no data");
+    } else if (dst->open(time)) {
       if (dst->empty()) {
-        for (int32_t format = 0; format != static_cast<int>(Format::TotalFormats); ++format) {
-          auto eFormat = (IClipboard::Format)format;
-          if (src->has(eFormat)) {
-            dst->add(eFormat, src->get(eFormat));
-          }
+        for (const auto &[format, payload] : items) {
+          dst->add(format, payload);
         }
         success = true;
       }

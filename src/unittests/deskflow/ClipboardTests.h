@@ -25,6 +25,9 @@ private Q_SLOTS:
   void unMarshalTextAndHtml();
   void equalClipboards();
   void fileFormatRoundTrip();
+  void marshallDropsEmptyFormats();
+  void copyKeepsDestinationWhenSourceEmpty();
+  void unmarshallIgnoresEmptyPayload();
 
 private:
   const std::string kTestString1 = "deskflow rocks";

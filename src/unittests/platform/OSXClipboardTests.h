@@ -20,8 +20,10 @@ private Q_SLOTS:
   void formatConvert_Tiff();
   void readTiffOnly();
   void fileUrlImage();
+  void marshallImageFileUrl();
   void filePayload();
   void emptyFilePayload();
+  void emptyPayloadFrameKeepsPasteboard();
 
 private:
   Log m_log;

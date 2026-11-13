@@ -13,6 +13,7 @@
 #include "common/ClipboardFile.h"
 #include "platform/OSXClipboardUTF8Converter.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -242,11 +243,76 @@ void OSXClipboardTests::fileUrlImage()
   QCOMPARE(result.substr(40), expectedPixels());
 }
 
+// This is where the zero length File format came from: for an image file url
+// has(File) is true because public.file-url exists, but get(File) is empty
+// because image files are claimed by the bitmap converter. Sending that empty
+// File entry made the peer clear its pasteboard to reproduce "present, but
+// nothing".
+void OSXClipboardTests::marshallImageFileUrl()
+{
+  using enum IClipboard::Format;
+
+  OSXClipboardImageConverter encoder(CFSTR("public.png"));
+  const std::string dib = makeTestDib();
+  const std::string png = encoder.fromIClipboard(dib);
+  QVERIFY(!png.empty());
+
+  const QString path = QDir::temp().filePath(QStringLiteral("deskflow-marshall-image-url.png"));
+  QFile file(path);
+  QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+  file.write(png.data(), static_cast<qint64>(png.size()));
+  file.close();
+
+  PasteboardRef board = nullptr;
+  QCOMPARE(PasteboardCreate(kPasteboardClipboard, &board), noErr);
+  QVERIFY(board != nullptr);
+  PasteboardClear(board);
+
+  const QByteArray url = QUrl::fromLocalFile(path).toString().toUtf8();
+  CFDataRef data = CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(url.constData()), url.size());
+  QVERIFY(data != nullptr);
+  PasteboardItemID itemID = 0;
+  const OSStatus put = PasteboardPutItemFlavor(board, itemID, CFSTR("public.file-url"), data, 0);
+  CFRelease(data);
+  CFRelease(board);
+  QCOMPARE(put, noErr);
+
+  OSXClipboard clipboard;
+  // the premise of the regression: File reports present while yielding no data
+  QVERIFY(clipboard.open(0));
+  QVERIFY(clipboard.has(File));
+  QVERIFY(clipboard.get(File).empty());
+  clipboard.close();
+
+  const std::string frame = IClipboard::marshall(&clipboard);
+  QVERIFY(frame.size() > 4);
+
+  // exactly one format may travel: the bitmap. File may not be present with a
+  // zero length payload.
+  const auto *raw = reinterpret_cast<const unsigned char *>(frame.data());
+  QCOMPARE(qFromBigEndian<quint32>(raw), 1u);
+  QCOMPARE(qFromBigEndian<quint32>(raw + 4), static_cast<quint32>(Bitmap));
+  QCOMPARE(qFromBigEndian<quint32>(raw + 8), static_cast<quint32>(dib.size()));
+
+  // do not leave a file url pointing at a file this test is about to delete
+  QCOMPARE(PasteboardCreate(kPasteboardClipboard, &board), noErr);
+  QVERIFY(board != nullptr);
+  PasteboardClear(board);
+  CFRelease(board);
+  QFile::remove(path);
+}
+
 void OSXClipboardTests::filePayload()
 {
   using enum IClipboard::Format;
 
-  const QString path = QDir::temp().filePath(QStringLiteral("deskflow-file-payload-test.txt"));
+  // the payload is stored under the received basename in a directory shared by
+  // every transfer, so a fixed name collides with the copy left behind by an
+  // earlier run and the helper deliberately picks a numbered variant instead.
+  // use a unique name and remove the stored copy, otherwise this test only
+  // passes the first time it runs.
+  const QString fileName = QStringLiteral("deskflow-file-payload-test-%1.txt").arg(QDateTime::currentMSecsSinceEpoch());
+  const QString path = QDir::temp().filePath(fileName);
   const QByteArray content("payload from the mac side\n");
   QFile source(path);
   QVERIFY(source.open(QIODevice::WriteOnly));
@@ -277,10 +343,14 @@ void OSXClipboardTests::filePayload()
   // the payload must round trip back into a file with the same content
   QString received;
   QVERIFY(deskflow::files::writeFilePayload(payload, received));
-  QVERIFY(received.endsWith(QStringLiteral("deskflow-file-payload-test.txt")));
+  QVERIFY(received.endsWith(fileName));
   QFile result(received);
   QVERIFY(result.open(QIODevice::ReadOnly));
   QCOMPARE(result.readAll(), content);
+  result.close();
+
+  QFile::remove(received);
+  QFile::remove(path);
 }
 
 void OSXClipboardTests::emptyFilePayload()
@@ -295,6 +365,62 @@ void OSXClipboardTests::emptyFilePayload()
   QString received;
   QVERIFY(deskflow::files::writeFilePayload(payload, received));
   QCOMPARE(QFileInfo(received).size(), 0);
+
+  QFile::remove(received);
+  QFile::remove(path);
+}
+
+// The Windows peer used to send a 12 byte frame: one format, zero length payload.
+// Receiving it must not take ownership of the local pasteboard, or the user's
+// screenshot is cleared and replaced with a flavor that holds nothing.
+void OSXClipboardTests::emptyPayloadFrameKeepsPasteboard()
+{
+  const QByteArray marker("peer-fix-marker");
+
+  PasteboardRef board = nullptr;
+  QCOMPARE(PasteboardCreate(kPasteboardClipboard, &board), noErr);
+  QVERIFY(board != nullptr);
+  PasteboardClear(board);
+  CFDataRef data =
+      CFDataCreate(kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(marker.constData()), marker.size());
+  QVERIFY(data != nullptr);
+  PasteboardItemID itemID = 0;
+  const OSStatus put = PasteboardPutItemFlavor(board, itemID, CFSTR("public.utf8-plain-text"), data, 0);
+  CFRelease(data);
+  CFRelease(board);
+  QCOMPARE(put, noErr);
+
+  std::string frame;
+  frame += (char)0;
+  frame += (char)0;
+  frame += (char)0;
+  frame += (char)1; // 1 format
+  frame += (char)0;
+  frame += (char)0;
+  frame += (char)0;
+  frame += (char)IClipboard::Format::File;
+  frame += (char)0;
+  frame += (char)0;
+  frame += (char)0;
+  frame += (char)0; // zero length payload
+  QCOMPARE(frame.size(), size_t{12}); // the exact size the peer sent
+
+  OSXClipboard clipboard;
+  IClipboard::unmarshall(&clipboard, frame, 0);
+
+  // the marker must still be on the pasteboard
+  QCOMPARE(PasteboardCreate(kPasteboardClipboard, &board), noErr);
+  QVERIFY(board != nullptr);
+  QCOMPARE(PasteboardGetItemIdentifier(board, (CFIndex)1, &itemID), noErr);
+  PasteboardFlavorFlags flags;
+  QCOMPARE(PasteboardGetItemFlavorFlags(board, itemID, CFSTR("public.utf8-plain-text"), &flags), noErr);
+  CFDataRef read = nullptr;
+  QCOMPARE(PasteboardCopyItemFlavorData(board, itemID, CFSTR("public.utf8-plain-text"), &read), noErr);
+  QVERIFY(read != nullptr);
+  const QByteArray received(reinterpret_cast<const char *>(CFDataGetBytePtr(read)), CFDataGetLength(read));
+  CFRelease(read);
+  CFRelease(board);
+  QCOMPARE(received, marker);
 }
 
 QTEST_MAIN(OSXClipboardTests)

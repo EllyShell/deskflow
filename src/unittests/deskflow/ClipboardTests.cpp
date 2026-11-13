@@ -249,4 +249,72 @@ void ClipboardTests::fileFormatRoundTrip()
   received.close();
 }
 
+// A format that reports has() but yields no bytes must not be marshalled: the
+// peer would take clipboard ownership for a payload that carries nothing, and
+// on macOS that clears the pasteboard before writing an empty flavor.
+void ClipboardTests::marshallDropsEmptyFormats()
+{
+  Clipboard clipboard;
+  QVERIFY(clipboard.open(0));
+  clipboard.add(IClipboard::Format::Text, "");
+  clipboard.add(IClipboard::Format::File, "");
+  clipboard.close();
+
+  const std::string actual = clipboard.marshall();
+  QCOMPARE(actual.size(), size_t{4});
+  QCOMPARE((int)actual[3], 0); // zero formats marshalled
+}
+
+// Reproduces the reported data loss: a source whose only payload is empty used
+// to empty the destination and then write nothing back.
+void ClipboardTests::copyKeepsDestinationWhenSourceEmpty()
+{
+  Clipboard source;
+  QVERIFY(source.open(0));
+  source.add(IClipboard::Format::Text, "");
+  source.close();
+
+  Clipboard destination;
+  QVERIFY(destination.open(0));
+  destination.add(IClipboard::Format::Text, kTestString1);
+  destination.close();
+
+  QVERIFY(!Clipboard::copy(&destination, &source));
+
+  QVERIFY(destination.open(0));
+  QCOMPARE(destination.get(IClipboard::Format::Text), kTestString1);
+  destination.close();
+}
+
+// The wire frame the macOS peer received was 12 bytes: one format, zero length.
+// The pasteboard must keep its contents when such a frame arrives.
+void ClipboardTests::unmarshallIgnoresEmptyPayload()
+{
+  std::string data;
+  data += (char)0;
+  data += (char)0;
+  data += (char)0;
+  data += (char)1; // 1 format
+  data += (char)0;
+  data += (char)0;
+  data += (char)0;
+  data += (char)IClipboard::Format::File;
+  data += (char)0;
+  data += (char)0;
+  data += (char)0;
+  data += (char)0; // zero length payload
+
+  Clipboard clipboard;
+  QVERIFY(clipboard.open(0));
+  clipboard.add(IClipboard::Format::Text, kTestString1);
+  clipboard.close();
+
+  clipboard.unmarshall(data, 0);
+
+  QVERIFY(clipboard.open(0));
+  QCOMPARE(clipboard.get(IClipboard::Format::Text), kTestString1);
+  QVERIFY(!clipboard.has(IClipboard::Format::File));
+  clipboard.close();
+}
+
 QTEST_MAIN(ClipboardTests)

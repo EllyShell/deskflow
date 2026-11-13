@@ -108,7 +108,15 @@ void OSXClipboard::add(Format format, const std::string &data)
 
     // skip converters for other formats
     if (converter->getFormat() == format) {
-      std::string osXData = converter->fromIClipboard(data);
+      const std::string osXData = converter->fromIClipboard(data);
+      if (osXData.empty()) {
+        // the converter produced nothing (unsupported image encoding, a file
+        // claim without a payload, ...). Writing a zero length flavor would
+        // leave a type on the pasteboard that advertises data it cannot hand
+        // out, and it keeps has() true while get() stays empty.
+        LOG_DEBUG("clipboard: skipped flavor format=%d (empty conversion)", static_cast<int>(format));
+        continue;
+      }
       CFStringRef flavorType = converter->getOSXFormat();
       CFDataRef dataRef = CFDataCreate(kCFAllocatorDefault, (uint8_t *)osXData.data(), osXData.size());
       PasteboardItemID itemID = 0;
