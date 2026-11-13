@@ -152,6 +152,21 @@ public:
     IEventQueue *m_events;
   };
 
+  // LockScreenAction
+  class LockScreenAction : public Action
+  {
+  public:
+    explicit LockScreenAction(IEventQueue *events);
+
+    // Action overrides
+    Action *clone() const override;
+    std::string format() const override;
+    void perform(const Event &) override;
+
+  private:
+    IEventQueue *m_events;
+  };
+
   class RestartServer : public Action
   {
   public:

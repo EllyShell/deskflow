@@ -211,6 +211,11 @@ std::string PrimaryClient::getSecureInputApp() const
   return m_computer->getSecureInputApp();
 }
 
+void PrimaryClient::lockScreen()
+{
+  m_computer->lockScreen();
+}
+
 void PrimaryClient::secureInputNotification(const std::string &app) const
 {
   LOG_INFO("application \"%s\" is blocking the keyboard", app.c_str());

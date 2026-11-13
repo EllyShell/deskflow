@@ -572,6 +572,8 @@ void Config::readSectionOptions(ConfigReadContext &s)
       return;
     } else if (const auto l = QString::fromStdString(line).simplified();
                !l.startsWith(QStringLiteral("keystroke")) && !l.startsWith(QStringLiteral("mousepress"))) {
+      // This filters condition names on the left of '='. Action names on the
+      // right, including lockScreen(), are parsed by parseAction below.
       continue;
     }
 
@@ -833,6 +835,17 @@ void Config::parseAction(
                   action = new InputFilter::ModifierAction(mask, ~mask);
           }
   */
+
+  else if (name == "lockScreen") {
+    // parseNameWithArgs yields one empty argument for "lockScreen()";
+    // accept both that and the parenthesis-less form.
+    const bool noArgs = args.empty() || (args.size() == 1 && args[0].empty());
+    if (!noArgs) {
+      throw ServerConfigReadException(s, "syntax for action: lockScreen");
+    }
+
+    action = new InputFilter::LockScreenAction(m_events);
+  }
 
   else if (name == "switchToScreen") {
     if (args.size() != 1) {

@@ -135,6 +135,16 @@ public:
   */
   virtual std::string getSecureInputApp() const = 0;
 
+  //! Lock the local session
+  /*!
+  Platform-specific session lock. The default does nothing so platforms that
+  don't implement it can still build and simply skip the local lock.
+  */
+  virtual void lockScreen()
+  {
+    // do nothing
+  }
+
   //@}
   //! @name accessors
   //@{

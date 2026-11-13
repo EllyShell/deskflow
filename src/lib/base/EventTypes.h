@@ -151,6 +151,9 @@ enum class EventTypes : uint32_t
   */
   ServerLockCursorToComputer,
 
+  /// This event is sent to inform the server to lock all computers. There is no event data.
+  ServerLockScreen,
+
   /// This event is sent when the computer has been switched to a client.
   ServerComputerSwitched,
 

@@ -95,6 +95,7 @@ public:
   void setSequenceNumber(uint32_t) override;
   bool isPrimary() const override;
   std::string getSecureInputApp() const override;
+  void lockScreen() override;
 
   void waitForCarbonLoop() const;
 

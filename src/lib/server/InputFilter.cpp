@@ -238,6 +238,28 @@ void InputFilter::LockCursorToComputerAction::perform(const Event &event)
   );
 }
 
+InputFilter::LockScreenAction::LockScreenAction(IEventQueue *events) : m_events(events)
+{
+  // do nothing
+}
+
+InputFilter::Action *InputFilter::LockScreenAction::clone() const
+{
+  return new LockScreenAction(*this);
+}
+
+std::string InputFilter::LockScreenAction::format() const
+{
+  return "lockScreen()";
+}
+
+void InputFilter::LockScreenAction::perform(const Event &event)
+{
+  m_events->addEvent(
+      Event(EventTypes::ServerLockScreen, event.getTarget(), nullptr, Event::EventFlags::DeliverImmediately)
+  );
+}
+
 InputFilter::RestartServer::RestartServer(Mode mode) : m_mode(mode)
 {
   // do nothing

@@ -131,6 +131,9 @@ Server::Server(ServerConfig &config, PrimaryClient *primaryClient, deskflow::Com
   m_events->addHandler(EventTypes::ServerLockCursorToComputer, m_inputFilter, [this](const auto &e) {
     handleLockCursorToComputerEvent(e);
   });
+  m_events->addHandler(EventTypes::ServerLockScreen, m_inputFilter, [this](const auto &e) {
+    handleLockScreenEvent(e);
+  });
   m_events->addHandler(EventTypes::PrimaryComputerFakeInputBegin, m_inputFilter, [this](const auto &) {
     m_primaryClient->fakeInputBegin();
   });
@@ -1488,6 +1491,16 @@ void Server::handleKeyboardBroadcastEvent(const Event &event)
          m_keyboardBroadcastingComputers.c_str())
     );
   }
+}
+
+void Server::handleLockScreenEvent(const Event &)
+{
+  // Lock the clients before the primary: if the local lock fails, at least
+  // the Windows clients are already locked.
+  const auto lang = AppUtil::instance().getCurrentLanguageCode();
+  onKeyDown('L', KeyModifierSuper, 0, lang, "*");
+  onKeyUp('L', KeyModifierSuper, 0, "*");
+  m_primaryClient->lockScreen();
 }
 
 void Server::handleLockCursorToComputerEvent(const Event &event)

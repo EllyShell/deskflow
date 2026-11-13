@@ -467,4 +467,9 @@ std::string Computer::getSecureInputApp() const
   return m_computer->getSecureInputApp();
 }
 
+void Computer::lockScreen()
+{
+  m_computer->lockScreen();
+}
+
 } // namespace deskflow

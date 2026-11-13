@@ -39,6 +39,7 @@
 #include <AvailabilityMacros.h>
 #include <IOKit/hidsystem/event_status_driver.h>
 #include <dispatch/dispatch.h>
+#include <dlfcn.h>
 #include <libproc.h>
 #include <mach-o/dyld.h>
 #include <math.h>
@@ -1880,6 +1881,39 @@ void OSXComputer::waitForCarbonLoop() const
   }
 
   LOG_DEBUG("carbon loop ready");
+}
+
+void OSXComputer::lockScreen()
+{
+  using LockScreenFn = int (*)();
+
+  static LockScreenFn lockScreen = []() -> LockScreenFn {
+    void *loginFramework =
+        dlopen("/System/Library/PrivateFrameworks/login.framework/login", RTLD_LAZY);
+    if (loginFramework == nullptr) {
+      LOG_WARN("unable to load login.framework: %s", dlerror());
+      return nullptr;
+    }
+    auto fn = reinterpret_cast<LockScreenFn>(dlsym(loginFramework, "SACLockScreenImmediate"));
+    if (fn == nullptr) {
+      LOG_WARN("unable to find SACLockScreenImmediate: %s", dlerror());
+    }
+    return fn;
+  }();
+
+  if (lockScreen != nullptr && lockScreen() == 0) {
+    return;
+  }
+
+  LOG_WARN("SACLockScreenImmediate failed, falling back to CGSession -suspend");
+  NSTask *task = [[NSTask alloc] init];
+  task.launchPath = @"/System/Library/CoreServices/Menu Extras/User.menu/Contents/Resources/CGSession";
+  task.arguments = @[ @"-suspend" ];
+  @try {
+    [task launch];
+  } @catch (NSException *exception) {
+    LOG_ERR("failed to lock screen: %s", exception.reason.UTF8String);
+  }
 }
 
 std::string OSXComputer::getSecureInputApp() const

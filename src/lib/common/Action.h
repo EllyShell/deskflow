@@ -48,6 +48,7 @@ public:
     mouseDown,
     mouseUp,
     mousebutton,
+    lockScreen,
   };
   enum class SwitchDirection
   {
@@ -125,7 +126,8 @@ private:
       QStringLiteral("restartServer"),
       QStringLiteral("mouseDown"),
       QStringLiteral("mouseUp"),
-      QStringLiteral("mousebutton")
+      QStringLiteral("mousebutton"),
+      QStringLiteral("lockScreen")
   };
 
   inline static const QStringList m_switchDirectionNames{

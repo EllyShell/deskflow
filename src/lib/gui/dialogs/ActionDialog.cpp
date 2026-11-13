@@ -37,7 +37,9 @@ ActionDialog::ActionDialog(QWidget *parent, const ServerConfig &config, Hotkey &
   ui->comboSwitchInDirection->setCurrentIndex(m_action.switchDirection());
   ui->comboLockCursorToComputer->setCurrentIndex(m_action.lockCursorMode());
 
-  ui->comboActionType->setCurrentIndex(m_action.type());
+  const int comboType =
+      m_action.type() == static_cast<int>(Action::Type::lockScreen) ? ActionTypes::LockScreen : m_action.type();
+  ui->comboActionType->setCurrentIndex(comboType);
   ui->comboTriggerOn->setCurrentIndex(m_action.activeOnRelease());
 
   for (const Computer &computer : config.computers()) {
@@ -72,7 +74,11 @@ void ActionDialog::accept()
     return;
 
   m_action.setKeySequence(ui->keySequenceWidget->keySequence());
-  m_action.setType(ui->comboActionType->currentIndex());
+  m_action.setType(
+      ui->comboActionType->currentIndex() == ActionTypes::LockScreen
+          ? static_cast<int>(Action::Type::lockScreen)
+          : ui->comboActionType->currentIndex()
+  );
 
   m_action.clearComputers();
 

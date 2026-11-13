@@ -50,6 +50,10 @@ QString Action::text() const
     text.append(m_commandTemplate.arg(m_lockCursorModeNames.at(m_lockCursorMode)));
     break;
 
+  case Type::lockScreen:
+    text.append(QStringLiteral("()"));
+    break;
+
   default:
     break;
   }

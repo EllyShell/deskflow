@@ -130,6 +130,9 @@ public:
   std::string getSecureInputApp() const override;
   void secureInputNotification(const std::string &app) const override;
 
+  //! Lock the local session
+  void lockScreen();
+
   deskflow::IStream *getStream() const override
   {
     return nullptr;

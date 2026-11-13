@@ -218,6 +218,9 @@ public:
   */
   std::string getSecureInputApp() const;
 
+  //! Lock the local session
+  void lockScreen();
+
   //@}
   //! @name accessors
   //@{

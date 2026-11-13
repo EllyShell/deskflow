@@ -35,6 +35,7 @@ public:
     inline static const auto SwitchToNextComputer = 5;
     inline static const auto ModifyCursorLock = 6;
     inline static const auto RestartServer = 7;
+    inline static const auto LockScreen = 8;
   };
 
   ActionDialog(QWidget *parent, const ServerConfig &config, Hotkey &hotkey, Action &action);

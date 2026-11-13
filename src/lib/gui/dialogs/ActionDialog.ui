@@ -78,6 +78,11 @@
          <string>Restart the server</string>
         </property>
        </item>
+       <item>
+        <property name="text">
+         <string>Lock the computers</string>
+        </property>
+       </item>
       </widget>
      </item>
     </layout>

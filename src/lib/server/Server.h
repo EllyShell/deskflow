@@ -328,6 +328,7 @@ private:
   void handleToggleComputerEvent(const Event &);
   void handleKeyboardBroadcastEvent(const Event &event);
   void handleLockCursorToComputerEvent(const Event &event);
+  void handleLockScreenEvent(const Event &event);
 
   // event processing
   void onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, uint32_t seqNum);
