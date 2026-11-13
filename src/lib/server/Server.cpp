@@ -81,6 +81,7 @@ Server::Server(ServerConfig &config, PrimaryClient *primaryClient, deskflow::Com
       clipboard.m_clipboard.close();
     }
     clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+    clipboard.m_clipboardDataSize = clipboard.m_clipboardData.size();
   }
 
   // install event handlers
@@ -1018,7 +1019,9 @@ void Server::handleClipboardSyncTimeout()
   }
 
   for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
-    const size_t size = m_clipboards[id].m_clipboard.marshall().size();
+    // Size is cached whenever the clipboard is read, so a switch doesn't
+    // need another full marshall just to enforce the size limit.
+    const size_t size = m_clipboards[id].m_clipboardDataSize;
     // A grab clears the cached data until the source sends its contents.
     // Publishing that temporary empty state destroys the source clipboard
     // during a switch and can trigger another grab on the destination.
@@ -1277,6 +1280,7 @@ void Server::handleClipboardGrabbed(const Event &event, BaseClientProxy *grabber
     clipboard.m_clipboard.close();
   }
   clipboard.m_clipboardData = clipboard.m_clipboard.marshall();
+  clipboard.m_clipboardDataSize = clipboard.m_clipboardData.size();
 
   // tell all other computers to take ownership of clipboard.  tell the
   // grabber that it's clipboard isn't dirty.
@@ -1536,6 +1540,7 @@ void Server::onClipboardChanged(const BaseClientProxy *sender, ClipboardID id, u
   sender->getClipboard(id, &clipboard.m_clipboard);
 
   std::string data = clipboard.m_clipboard.marshall();
+  clipboard.m_clipboardDataSize = data.size();
 
   // never let an empty clipboard from one computer wipe the clipboard of the
   // active one: clients report "no formats" while they are being grabbed, and

@@ -373,6 +373,7 @@ private:
   public:
     Clipboard m_clipboard;
     std::string m_clipboardData;
+    size_t m_clipboardDataSize = 0;
     std::string m_clipboardOwner;
     uint32_t m_clipboardSeqNum = 0;
   };
