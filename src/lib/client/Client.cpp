@@ -291,6 +291,7 @@ void Client::setClipboardDirty(ClipboardID, bool)
 
 void Client::keyDown(KeyID id, KeyModifierMask mask, KeyButton button, const std::string &lang)
 {
+  LOG_DEBUG("client got keyDown id=%d mask=0x%04x button=0x%04x lang=\"%s\"", id, mask, button, lang.c_str());
   m_computer->keyDown(id, mask, button, lang);
 }
 

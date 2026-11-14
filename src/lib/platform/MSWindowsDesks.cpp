@@ -83,6 +83,10 @@
 
 static void send_keyboard_input(WORD wVk, WORD wScan, DWORD dwFlags)
 {
+  // DIAG: log the exact injected parameters for Windows-key combinations
+  if (wVk == VK_LWIN || wVk == VK_RWIN || wVk == 'L') {
+    LOG_DEBUG("inject key vk=0x%02x scan=0x%02x flags=0x%02x (inSend=0x%02x)", wVk, wScan, dwFlags, dwFlags & 0xF);
+  }
   INPUT inp;
   inp.type = INPUT_KEYBOARD;
   inp.ki.wVk = (dwFlags & KEYEVENTF_UNICODE) ? 0 : wVk; // 1..254 inclusive otherwise

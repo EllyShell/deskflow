@@ -729,6 +729,18 @@ void MSWindowsComputer::updateKeys()
 
 void MSWindowsComputer::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton button, const std::string &lang)
 {
+  // A Super(Meta)+L keystroke means "lock this screen". Simulating Win+L by
+  // injecting synthetic key events is unreliable on Windows (UIPI, keyboard
+  // layout and timing can all swallow it), and the lock request comes from a
+  // trusted local peer anyway, so lock the session directly instead.
+  if ((id == 'L' || id == 'l') && (mask & KeyModifierSuper) != 0) {
+    if (LockWorkStation()) {
+      LOG_DEBUG("lockScreen: session locked locally on behalf of the server");
+      return;
+    }
+    LOG_WARN("lockScreen: LockWorkStation failed (error %lu), falling back to key injection", GetLastError());
+  }
+
   PlatformComputer::fakeKeyDown(id, mask, button, lang);
   updateMouseKeys();
 }

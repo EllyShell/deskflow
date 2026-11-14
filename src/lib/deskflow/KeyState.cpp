@@ -797,7 +797,12 @@ void KeyState::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton serverID, c
   // if this server key is already down then this is probably a
   // mis-reported autorepeat.
   serverID &= kButtonMask;
+  LOG_DEBUG(
+      "fakeKeyDown arrive id=%d mask=0x%04x serverID=0x%04x lang=\"%s\" activeMods=0x%04x downCount=%d", id, mask,
+      serverID, lang.c_str(), (unsigned)getActiveModifiersRValue(), m_serverKeys[serverID]
+  );
   if (m_serverKeys[serverID] != 0) {
+    LOG_DEBUG("fakeKeyDown: serverID already down -> repeat path");
     fakeKeyRepeat(id, mask, 1, serverID, lang);
     return;
   }
@@ -814,6 +819,10 @@ void KeyState::fakeKeyDown(KeyID id, KeyModifierMask mask, KeyButton serverID, c
       m_keyMap.mapKey(keys, id, pollActiveGroup(), m_activeModifiers, getActiveModifiersRValue(), mask, false, lang);
 
   if (keyItem == nullptr) {
+    LOG_DEBUG(
+        "fakeKeyDown: NO KEYMAP ENTRY id=%d mask=0x%04x lang=\"%s\" activeMods=0x%04x -> key dropped", id, mask,
+        lang.c_str(), (unsigned)getActiveModifiersRValue()
+    );
     // a media key won't be mapped on mac, so we need to fake it in a
     // special way
     if (id == kKeyAudioDown || id == kKeyAudioUp || id == kKeyAudioMute || id == kKeyAudioPlay || id == kKeyAudioPrev ||

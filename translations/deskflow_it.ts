@@ -134,6 +134,10 @@ p, li { white-space: pre-wrap; }
         <source>Switch to %1</source>
         <translation>Passa a %1</translation>
     </message>
+    <message>
+        <source>Lock the computers</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>ClientConfigDialog</name>
@@ -896,6 +900,10 @@ Inoltre, verifica di poter %1 il file di configurazione del server: %2</translat
     <message>
         <source>%1 is already running</source>
         <translation>%1 è già in esecuzione</translation>
+    </message>
+    <message>
+        <source>Deskflow needs Accessibility permission to control the keyboard and mouse. Enable Deskflow in System Settings &gt; Privacy &amp; Security &gt; Accessibility, then start the core.</source>
+        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Alt</source>
