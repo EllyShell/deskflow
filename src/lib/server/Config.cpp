@@ -1455,7 +1455,10 @@ void ConfigReadContext::parseNameWithArgs(
   }
 
   // verify ')'
-  if (j == std::string::npos) {
+  // j was reused while trimming the last argument, so use i, which still
+  // points at the delimiter that ended the loop. This also accepts empty
+  // argument lists such as lockScreen().
+  if (i >= line.length() || line[i] != ')') {
     // expected )
     throw ServerConfigReadException(*this, "missing )");
   }
